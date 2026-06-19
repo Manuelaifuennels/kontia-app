@@ -66,7 +66,7 @@ export default function Sidebar({ currentPage, onNavigate, user, onLogout }) {
               ID: {user.empresa_id}
             </p>
           )}
-          <p className="text-[10px] text-indigo-300/40 capitalize">{user.role}</p>
+          <p className="text-[10px] text-indigo-300/40 capitalize">{user.rol}</p>
           <button
             onClick={onLogout}
             className="flex items-center gap-1.5 mt-3 text-xs text-indigo-300/60 hover:text-red-400 transition-colors cursor-pointer"

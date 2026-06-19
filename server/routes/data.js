@@ -5,6 +5,12 @@ import { authMiddleware } from '../middleware/auth.js';
 const router = Router();
 router.use(authMiddleware);
 
+const EMPRESA_FIELD = { usuarios: 'empresa_id2' };
+
+function empresaCol(table) {
+  return EMPRESA_FIELD[table] || 'empresa_id';
+}
+
 function resolveTable(req, res) {
   const name = req.params.table;
   const tableId = TABLE_IDS[name];
@@ -20,8 +26,9 @@ router.get('/:table', async (req, res) => {
     const tableId = resolveTable(req, res);
     if (!tableId) return;
 
+    const col = empresaCol(req.params.table);
     const { limit, offset, sort, fields, where: extraWhere, ...rest } = req.query;
-    const empresaWhere = `(empresa_id,eq,${req.user.empresa_id})`;
+    const empresaWhere = `(${col},eq,${req.user.empresa_id})`;
     const where = extraWhere ? `${empresaWhere}~and${extraWhere}` : empresaWhere;
 
     const params = new URLSearchParams({ where });
@@ -45,9 +52,11 @@ router.post('/:table', async (req, res) => {
     const tableId = resolveTable(req, res);
     if (!tableId) return;
 
+    const col = empresaCol(req.params.table);
+    const inject = { [col]: req.user.empresa_id };
     const body = Array.isArray(req.body)
-      ? req.body.map((r) => ({ ...r, empresa_id: req.user.empresa_id }))
-      : { ...req.body, empresa_id: req.user.empresa_id };
+      ? req.body.map((r) => ({ ...r, ...inject }))
+      : { ...req.body, ...inject };
 
     const data = await ncPost(`/tables/${tableId}/records`, body);
     res.json(data);
@@ -61,6 +70,15 @@ router.patch('/:table', async (req, res) => {
     const tableId = resolveTable(req, res);
     if (!tableId) return;
 
+    const recordId = req.body?.Id;
+    if (!recordId) return res.status(400).json({ error: 'Id requerido' });
+
+    const col = empresaCol(req.params.table);
+    const existing = await nc(`/tables/${tableId}/records/${recordId}`);
+    if (String(existing[col]) !== String(req.user.empresa_id)) {
+      return res.status(403).json({ error: 'Sin acceso a este registro' });
+    }
+
     const data = await ncPatch(`/tables/${tableId}/records`, req.body);
     res.json(data);
   } catch (err) {
@@ -72,6 +90,12 @@ router.delete('/:table/:id', async (req, res) => {
   try {
     const tableId = resolveTable(req, res);
     if (!tableId) return;
+
+    const col = empresaCol(req.params.table);
+    const existing = await nc(`/tables/${tableId}/records/${req.params.id}`);
+    if (String(existing[col]) !== String(req.user.empresa_id)) {
+      return res.status(403).json({ error: 'Sin acceso a este registro' });
+    }
 
     const data = await ncDel(`/tables/${tableId}/records`, [{ Id: Number(req.params.id) }]);
     res.json(data);

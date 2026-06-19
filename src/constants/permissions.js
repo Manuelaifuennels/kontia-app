@@ -38,7 +38,6 @@ export const PERMISSIONS = {
 };
 
 export function can(user, permission) {
-  if (!user?.role) return false;
-  const role = PERMISSIONS[user.role];
-  return role ? !!role[permission] : false;
+  const r = user?.rol || "admin";
+  return (PERMISSIONS[r] || PERMISSIONS.usuario)[permission] || false;
 }
