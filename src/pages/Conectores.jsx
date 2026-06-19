@@ -103,7 +103,7 @@ export default function Conectores() {
                 )}
                 {result.contenido && (
                   <pre className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs text-slate-600 max-h-64 overflow-auto whitespace-pre-wrap">
-                    {result.contenido}
+                    {typeof result.contenido === "string" ? result.contenido : JSON.stringify(result.contenido, null, 2)}
                   </pre>
                 )}
                 {!result.download_url && !result.url && !result.contenido && (

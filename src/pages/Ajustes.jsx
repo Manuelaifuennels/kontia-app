@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import api from "../api/client";
+import { useAuth } from "../hooks/useAuth";
 import { useToast } from "../components/ui/Toast";
 import DatosTab from "./ajustes/DatosTab";
 import UsuariosTab from "./ajustes/UsuariosTab";
@@ -24,6 +25,7 @@ const TABS = [
 ];
 
 export default function Ajustes() {
+  const { user } = useAuth();
   const toast = useToast();
   const [tab, setTab] = useState("datos");
   const [loading, setLoading] = useState(true);
@@ -71,7 +73,7 @@ export default function Ajustes() {
       } else {
         await api.createRecord("config", data);
       }
-      toast("Configuracion guardada", "success");
+      toast("Configuración guardada", "success");
       loadAll();
     } catch (err) {
       toast(err.message, "error");
@@ -89,7 +91,7 @@ export default function Ajustes() {
       case "datos":
         return <DatosTab config={config} onSave={handleSaveConfig} saving={saving} />;
       case "usuarios":
-        return <UsuariosTab />;
+        return <UsuariosTab user={user} />;
       case "actividades":
         return <ActividadesTab actividades={actividades} onReload={loadAll} />;
       case "ejercicios":
@@ -111,9 +113,13 @@ export default function Ajustes() {
 
   return (
     <div className="p-6">
-      <h1 className="text-xl font-bold text-slate-800 mb-6">Ajustes</h1>
+      <div className="flex justify-between items-start mb-6">
+        <div>
+          <h1 className="text-xl font-bold text-slate-800">Ajustes — {user?.empresa_nombre || `Empresa ${user?.empresa_id}`}</h1>
+          <p className="text-sm text-slate-400 mt-0.5">Configuración de empresa</p>
+        </div>
+      </div>
 
-      {/* Tab navigation */}
       <div className="flex flex-wrap gap-1 mb-6">
         {TABS.map((t) => (
           <button
@@ -130,7 +136,6 @@ export default function Ajustes() {
         ))}
       </div>
 
-      {/* Active tab content */}
       {renderTab()}
     </div>
   );

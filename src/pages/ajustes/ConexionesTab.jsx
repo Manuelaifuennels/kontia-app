@@ -8,6 +8,8 @@ function StatusDot({ connected }) {
 }
 
 const WEBHOOKS = [
+  "kontia-login",
+  "kontia-registro",
   "procesar-factura",
   "exportar-csv",
   "exportar-a3",
@@ -23,8 +25,8 @@ export default function ConexionesTab() {
   const services = [
     { label: "ID Empresa", value: user?.empresa_id || user?.id_empresa || "—" },
     { label: "NocoDB", connected: true },
-    { label: "n8n (webhooks)", connected: true },
-    { label: "MinIO (archivos)", connected: true },
+    { label: "n8n Webhooks", connected: true },
+    { label: "MinIO", connected: true },
   ];
 
   return (
@@ -33,16 +35,10 @@ export default function ConexionesTab() {
 
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
         <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-slate-50 border-b border-slate-200">
-              <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Servicio</th>
-              <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Estado</th>
-            </tr>
-          </thead>
           <tbody>
             {services.map((s, i) => (
               <tr key={i} className="border-b border-slate-100">
-                <td className="px-4 py-3 text-slate-700 font-medium">{s.label}</td>
+                <td className="px-4 py-3 text-slate-700 font-semibold w-40">{s.label}</td>
                 <td className="px-4 py-3 text-slate-600">
                   {s.value ? (
                     <span className="text-sm">{s.value}</span>
@@ -57,20 +53,14 @@ export default function ConexionesTab() {
                 </td>
               </tr>
             ))}
+            <tr className="border-b border-slate-100">
+              <td className="px-4 py-3 text-slate-700 font-semibold align-top">Webhooks activos</td>
+              <td className="px-4 py-3 text-slate-600 text-xs break-all">
+                {WEBHOOKS.join(", ")}
+              </td>
+            </tr>
           </tbody>
         </table>
-      </div>
-
-      <div className="mt-6">
-        <h3 className="text-sm font-semibold text-slate-700 mb-3">Webhooks activos</h3>
-        <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-2">
-          {WEBHOOKS.map((w) => (
-            <div key={w} className="flex items-center gap-2 text-sm text-slate-500">
-              <StatusDot connected />
-              <span>{w}</span>
-            </div>
-          ))}
-        </div>
       </div>
     </div>
   );
