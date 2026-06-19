@@ -91,9 +91,9 @@ export default function Conectores() {
 
             {result && (
               <div className="mt-4 space-y-3">
-                {result.url && (
+                {(result.download_url || result.url) && (
                   <a
-                    href={result.url}
+                    href={result.download_url || result.url}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-2 text-sm text-teal-600 hover:text-teal-700 font-medium"
@@ -106,7 +106,7 @@ export default function Conectores() {
                     {result.contenido}
                   </pre>
                 )}
-                {!result.url && !result.contenido && (
+                {!result.download_url && !result.url && !result.contenido && (
                   <p className="text-sm text-green-600">Exportación completada correctamente.</p>
                 )}
               </div>

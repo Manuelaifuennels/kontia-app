@@ -1,11 +1,12 @@
 import React, { useState, useRef } from "react";
 import api from "../api/client";
+import { useAuth } from "../hooks/useAuth";
 import { useToast } from "../components/ui/Toast";
 import Button from "../components/ui/Button";
 import Icon from "../components/ui/Icon";
 import Field from "../components/ui/Field";
 
-const ACCEPTED = ".pdf,.jpg,.jpeg,.png,.zip";
+const ACCEPTED = ".pdf,.jpg,.jpeg,.png,.zip,.rar,.7z";
 
 function readFileAsBase64(file) {
   return new Promise((resolve, reject) => {
@@ -17,6 +18,7 @@ function readFileAsBase64(file) {
 }
 
 export default function SubirDocs({ onBack }) {
+  const { user } = useAuth();
   const toast = useToast();
   const fileRef = useRef(null);
 
@@ -26,170 +28,117 @@ export default function SubirDocs({ onBack }) {
   const [separarPdf, setSepararPdf] = useState(false);
   const [files, setFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
-  const [progress, setProgress] = useState({ current: 0, total: 0 });
-  const [dragOver, setDragOver] = useState(false);
+  const [progress, setProgress] = useState([]);
 
   function addFiles(fileList) {
-    const arr = Array.from(fileList).filter((f) => {
-      const ext = f.name.split(".").pop().toLowerCase();
-      return ["pdf", "jpg", "jpeg", "png", "zip"].includes(ext);
-    });
-    setFiles((prev) => [...prev, ...arr]);
-  }
-
-  function removeFile(idx) {
-    setFiles((prev) => prev.filter((_, i) => i !== idx));
-  }
-
-  function handleDrop(e) {
-    e.preventDefault();
-    setDragOver(false);
-    if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
+    setFiles((prev) => [...prev, ...Array.from(fileList)]);
   }
 
   async function handleUpload() {
-    if (files.length === 0) {
-      toast("Selecciona al menos un archivo", "warning");
-      return;
-    }
-
+    if (files.length === 0) return;
     setUploading(true);
-    setProgress({ current: 0, total: files.length });
+    const results = [];
 
-    let successCount = 0;
     for (let i = 0; i < files.length; i++) {
-      setProgress({ current: i + 1, total: files.length });
+      const file = files[i];
+      setProgress((p) => [...p, `Procesando ${file.name}...`]);
       try {
-        const base64 = await readFileAsBase64(files[i]);
-        const fecha =
-          fechaMode === "hoy"
-            ? new Date().toISOString().slice(0, 10)
-            : fechaMode === "configurable"
-            ? fechaCustom
-            : null;
-
+        const b64 = await readFileAsBase64(file);
         await api.webhook("procesar-factura", {
-          archivo: base64,
-          nombre_archivo: files[i].name,
+          archivo_base64: b64,
+          nombre_archivo: file.name,
+          media_type: file.type,
+          empresa_id: user.empresa_id,
           tipo_documento: tipo,
-          fecha_factura: fecha,
+          fecha_contable: fechaMode === "hoy"
+            ? new Date().toISOString().split("T")[0]
+            : fechaMode === "configurable" ? fechaCustom : null,
           separar_paginas: separarPdf,
+          empresa_carpeta: String(user.empresa_id),
         });
-        successCount++;
-      } catch (err) {
-        toast(`Error al subir ${files[i].name}: ${err.message}`, "error");
+        results.push({ file: file.name, ok: true });
+      } catch (e) {
+        results.push({ file: file.name, ok: false, err: e.message });
       }
     }
 
+    const ok = results.filter((r) => r.ok).length;
+    toast(`${ok}/${files.length} facturas procesadas`, "success");
     setUploading(false);
-    if (successCount > 0) {
-      toast(`${successCount} archivo(s) procesados correctamente`, "success");
-      setTimeout(() => onBack(), 1200);
-    }
+    setTimeout(onBack, 1500);
   }
 
   return (
-    <div className="p-6 max-w-2xl mx-auto">
-      <button onClick={onBack} className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700 mb-6">
-        <Icon name="undo" size={16} /> Volver a contabilidad
-      </button>
-
-      <h1 className="text-xl font-bold text-slate-800 mb-6">Subir documentos</h1>
-
-      <div className="grid grid-cols-2 gap-4 mb-6">
-        <Field
-          label="Tipo de documento"
-          value={tipo}
-          onChange={setTipo}
-          options={[
-            { value: "compra", label: "Factura de compra" },
-            { value: "venta", label: "Factura de venta" },
-          ]}
-        />
-        <Field
-          label="Fecha de la factura"
-          value={fechaMode}
-          onChange={setFechaMode}
-          options={[
-            { value: "fecha_factura", label: "Extraer del documento" },
-            { value: "hoy", label: "Fecha de hoy" },
-            { value: "configurable", label: "Fecha personalizada" },
-          ]}
-        />
+    <div className="p-6">
+      <div className="flex items-center gap-2 mb-5">
+        <Button variant="ghost" onClick={onBack}>
+          <Icon name="undo" size={16} /> Volver a Contabilidad
+        </Button>
       </div>
-
-      {fechaMode === "configurable" && (
-        <div className="mb-4">
-          <Field label="Fecha" type="date" value={fechaCustom} onChange={setFechaCustom} />
+      <div className="bg-white border border-slate-200 rounded-xl p-8">
+        <div className="text-center mb-6">
+          <Icon name="upload" size={40} className="text-teal-600 mx-auto mb-2" />
+          <h2 className="text-xl font-bold text-teal-600 mb-1">Subir documentos</h2>
+          <p className="text-sm text-slate-500">Sube tus facturas en PDF, JPG, PNG o ZIP</p>
         </div>
-      )}
 
-      <Field label="Separar páginas del PDF" checkbox value={separarPdf} onChange={setSepararPdf} />
+        <div
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => { e.preventDefault(); addFiles(e.dataTransfer.files); }}
+          onClick={() => fileRef.current?.click()}
+          className="border-2 border-dashed border-teal-300 rounded-xl p-10 text-center cursor-pointer mb-5 bg-teal-50/30 hover:bg-teal-50/60 transition-colors"
+        >
+          <div className="text-sm text-slate-500">
+            {files.length ? `${files.length} archivo(s) seleccionado(s)` : "Arrastre aquí o haga click"}
+          </div>
+          <input
+            ref={fileRef}
+            type="file"
+            multiple
+            accept={ACCEPTED}
+            onChange={(e) => addFiles(e.target.files)}
+            className="hidden"
+          />
+        </div>
 
-      {/* Drop zone */}
-      <div
-        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={handleDrop}
-        onClick={() => fileRef.current?.click()}
-        className={`border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-colors mb-6 ${
-          dragOver
-            ? "border-teal-400 bg-teal-50"
-            : "border-slate-300 hover:border-slate-400 bg-slate-50"
-        }`}
-      >
-        <Icon name="upload" size={32} className="mx-auto text-slate-400 mb-3" />
-        <p className="text-sm text-slate-600 font-medium">
-          Arrastra archivos o haz clic para seleccionar
-        </p>
-        <p className="text-xs text-slate-400 mt-1">PDF, JPG, PNG, ZIP</p>
-        <input
-          ref={fileRef}
-          type="file"
-          accept={ACCEPTED}
-          multiple
-          className="hidden"
-          onChange={(e) => addFiles(e.target.files)}
-        />
+        <div className="grid grid-cols-2 gap-4 mb-4">
+          <Field
+            label="Tipo de documento"
+            value={tipo}
+            onChange={setTipo}
+            options={[
+              { value: "compra", label: "Factura de proveedor" },
+              { value: "venta", label: "Factura de cliente" },
+            ]}
+          />
+          <Field
+            label="Fecha contable"
+            value={fechaMode}
+            onChange={setFechaMode}
+            options={[
+              { value: "fecha_factura", label: "Fecha de factura" },
+              { value: "hoy", label: "Hoy" },
+              { value: "configurable", label: "Fecha configurable" },
+            ]}
+          />
+        </div>
+        {fechaMode === "configurable" && (
+          <Field label="Fecha personalizada" type="date" value={fechaCustom} onChange={setFechaCustom} />
+        )}
+        <Field checkbox label="Separar páginas del PDF (cada página = 1 factura)" value={separarPdf} onChange={setSepararPdf} />
+
+        {progress.length > 0 && (
+          <div className="my-4 text-xs text-slate-500 space-y-1">
+            {progress.map((p, i) => <div key={i}>{p}</div>)}
+          </div>
+        )}
+
+        <div className="text-center mt-5">
+          <Button onClick={handleUpload} disabled={!files.length || uploading} size="lg">
+            {uploading ? "Procesando..." : "Subir documentos"}
+          </Button>
+        </div>
       </div>
-
-      {/* File list */}
-      {files.length > 0 && (
-        <div className="mb-6 space-y-2">
-          {files.map((f, i) => (
-            <div key={i} className="flex items-center justify-between bg-white border border-slate-200 rounded-lg px-4 py-2">
-              <div className="flex items-center gap-2 text-sm text-slate-700">
-                <Icon name="file" size={16} className="text-slate-400" />
-                {f.name}
-                <span className="text-xs text-slate-400">({(f.size / 1024).toFixed(0)} KB)</span>
-              </div>
-              <button onClick={() => removeFile(i)} className="text-slate-400 hover:text-red-500 transition-colors">
-                <Icon name="x" size={16} />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Progress */}
-      {uploading && (
-        <div className="mb-6">
-          <div className="flex items-center justify-between text-sm text-slate-600 mb-2">
-            <span>Procesando archivos...</span>
-            <span>{progress.current} / {progress.total}</span>
-          </div>
-          <div className="w-full bg-slate-200 rounded-full h-2">
-            <div
-              className="bg-teal-500 h-2 rounded-full transition-all"
-              style={{ width: `${(progress.current / progress.total) * 100}%` }}
-            />
-          </div>
-        </div>
-      )}
-
-      <Button onClick={handleUpload} disabled={uploading || files.length === 0} size="lg" className="w-full justify-center">
-        {uploading ? "Procesando..." : `Subir ${files.length} archivo(s)`}
-      </Button>
     </div>
   );
 }

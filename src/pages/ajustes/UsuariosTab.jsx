@@ -26,7 +26,7 @@ export default function UsuariosTab() {
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [editUser, setEditUser] = useState(null);
-  const [form, setForm] = useState({ nombre: "", email: "", password: "", role: "usuario" });
+  const [form, setForm] = useState({ nombre: "", email: "", password: "", rol: "usuario" });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -45,7 +45,7 @@ export default function UsuariosTab() {
   async function handleAdd(e) {
     e.preventDefault();
     try {
-      await api.createRecord("usuarios", form);
+      await api.createRecord("usuarios", { ...form, activo: "true" });
       toast("Usuario creado", "success");
       setShowAdd(false);
       setForm({ nombre: "", email: "", password: "", role: "usuario" });
@@ -58,7 +58,7 @@ export default function UsuariosTab() {
   async function handleRoleUpdate(e) {
     e.preventDefault();
     try {
-      await api.updateRecord("usuarios", { Id: editUser.Id, role: editUser.role });
+      await api.updateRecord("usuarios", { Id: editUser.Id, rol: editUser.rol });
       toast("Rol actualizado", "success");
       setEditUser(null);
       load();
@@ -69,8 +69,8 @@ export default function UsuariosTab() {
 
   async function toggleActive(user) {
     try {
-      await api.updateRecord("usuarios", { Id: user.Id, activo: !user.activo });
-      toast(user.activo ? "Usuario desactivado" : "Usuario activado", "success");
+      await api.updateRecord("usuarios", { Id: user.Id, activo: user.activo === "true" ? "false" : "true" });
+      toast(user.activo === "true" ? "Usuario desactivado" : "Usuario activado", "success");
       load();
     } catch (err) {
       toast(err.message, "error");
@@ -107,18 +107,18 @@ export default function UsuariosTab() {
                   <td className="px-4 py-2.5 text-slate-700">{u.nombre || "—"}</td>
                   <td className="px-4 py-2.5 text-slate-600">{u.email}</td>
                   <td className="px-4 py-2.5">
-                    <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${ROLE_COLORS[u.role] || ROLE_COLORS.usuario}`}>
-                      {u.role || "usuario"}
+                    <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${ROLE_COLORS[u.rol] || ROLE_COLORS.usuario}`}>
+                      {u.rol || "usuario"}
                     </span>
                   </td>
                   <td className="px-4 py-2.5">
                     <button
                       onClick={() => toggleActive(u)}
                       className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium cursor-pointer transition-colors ${
-                        u.activo !== false ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"
+                        u.activo === "true" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"
                       }`}
                     >
-                      {u.activo !== false ? "Activo" : "Inactivo"}
+                      {u.activo === "true" ? "Activo" : "Inactivo"}
                     </button>
                   </td>
                   <td className="px-4 py-2.5 text-slate-500 text-xs">{u.ultimo_login || "—"}</td>
@@ -142,7 +142,7 @@ export default function UsuariosTab() {
           <Field label="Contrasena" value={form.password} onChange={(v) => setForm({ ...form, password: v })} type="password" />
           <Field
             label="Rol"
-            value={form.role}
+            value={form.rol}
             onChange={(v) => setForm({ ...form, role: v })}
             options={ROLES.map((r) => ({ value: r.value, label: r.label }))}
           />
@@ -160,7 +160,7 @@ export default function UsuariosTab() {
             <p className="text-sm text-slate-600 mb-3">{editUser.nombre} ({editUser.email})</p>
             <Field
               label="Rol"
-              value={editUser.role || "usuario"}
+              value={editUser.rol || "usuario"}
               onChange={(v) => setEditUser({ ...editUser, role: v })}
               options={ROLES.map((r) => ({ value: r.value, label: r.label }))}
             />

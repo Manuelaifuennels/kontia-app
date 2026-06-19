@@ -7,14 +7,24 @@ function StatusDot({ connected }) {
   );
 }
 
+const WEBHOOKS = [
+  "procesar-factura",
+  "exportar-csv",
+  "exportar-a3",
+  "exportar-contaplus",
+  "exportar-contasol",
+  "conciliacion-bancaria",
+  "separar-pdf",
+];
+
 export default function ConexionesTab() {
   const { user } = useAuth();
 
   const services = [
     { label: "ID Empresa", value: user?.empresa_id || user?.id_empresa || "—" },
-    { label: "NocoDB host", connected: true },
-    { label: "n8n host", connected: true },
-    { label: "MinIO host", connected: true },
+    { label: "NocoDB", connected: true },
+    { label: "n8n (webhooks)", connected: true },
+    { label: "MinIO (archivos)", connected: true },
   ];
 
   return (
@@ -53,15 +63,13 @@ export default function ConexionesTab() {
 
       <div className="mt-6">
         <h3 className="text-sm font-semibold text-slate-700 mb-3">Webhooks activos</h3>
-        <div className="bg-white border border-slate-200 rounded-xl p-5">
-          <div className="flex items-center gap-2 text-sm text-slate-500">
-            <StatusDot connected />
-            <span>Webhook de procesamiento de facturas</span>
-          </div>
-          <div className="flex items-center gap-2 text-sm text-slate-500 mt-2">
-            <StatusDot connected />
-            <span>Webhook de notificaciones por email</span>
-          </div>
+        <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-2">
+          {WEBHOOKS.map((w) => (
+            <div key={w} className="flex items-center gap-2 text-sm text-slate-500">
+              <StatusDot connected />
+              <span>{w}</span>
+            </div>
+          ))}
         </div>
       </div>
     </div>
