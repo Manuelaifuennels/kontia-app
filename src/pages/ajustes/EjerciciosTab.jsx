@@ -80,7 +80,7 @@ export default function EjerciciosTab({ ejercicios, onReload }) {
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-slate-400">Sin ejercicios</td>
+                <td colSpan={6} className="px-4 py-8 text-center text-slate-400">Sin ejercicios. Añade uno.</td>
               </tr>
             )}
           </tbody>
@@ -91,9 +91,9 @@ export default function EjerciciosTab({ ejercicios, onReload }) {
       <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Nuevo ejercicio">
         <form onSubmit={handleAdd} className="space-y-1">
           <Field label="Año" value={form.anio} onChange={(v) => setForm({ ...form, anio: v })} type="number" />
-          <Field label="Fecha inicio (DD/MM/AAAA)" value={form.fecha_inicio} onChange={(v) => setForm({ ...form, fecha_inicio: v })} type="date" />
-          <Field label="Fecha fin (DD/MM/AAAA)" value={form.fecha_fin} onChange={(v) => setForm({ ...form, fecha_fin: v })} type="date" />
-          <Field label="Código CSV" value={form.codigo_csv} onChange={(v) => setForm({ ...form, codigo_csv: v })} />
+          <Field label="Fecha inicio (DD/MM/AAAA)" value={form.fecha_inicio} onChange={(v) => setForm({ ...form, fecha_inicio: v })} />
+          <Field label="Fecha fin (DD/MM/AAAA)" value={form.fecha_fin} onChange={(v) => setForm({ ...form, fecha_fin: v })} />
+          <Field label="Código empresa CSV" value={form.codigo_csv} onChange={(v) => setForm({ ...form, codigo_csv: v })} />
           <div className="flex justify-end gap-2 pt-3">
             <Button variant="ghost" size="sm" onClick={() => setShowAdd(false)} type="button">Cancelar</Button>
             <Button size="sm" type="submit">Crear</Button>

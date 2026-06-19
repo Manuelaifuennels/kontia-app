@@ -1,5 +1,6 @@
 import React, { useState, useRef } from "react";
 import api from "../api/client";
+import { useAuth } from "../hooks/useAuth";
 import { useToast } from "../components/ui/Toast";
 import { fmt } from "../utils/format";
 import Button from "../components/ui/Button";
@@ -15,6 +16,7 @@ function readFileAsBase64(file) {
 }
 
 export default function Conciliacion() {
+  const { user } = useAuth();
   const toast = useToast();
   const fileRef = useRef(null);
 
@@ -31,7 +33,7 @@ export default function Conciliacion() {
     setResult(null);
     try {
       const csv_base64 = await readFileAsBase64(file);
-      const res = await api.webhook("conciliacion-bancaria", { csv_base64 });
+      const res = await api.webhook("conciliacion-bancaria", { csv_base64, empresa_id: user.empresa_id });
       setResult(res);
       toast(`Conciliación completada: ${res?.matches?.length || 0} coincidencias`, "success");
     } catch (err) {

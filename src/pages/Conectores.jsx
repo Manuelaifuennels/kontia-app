@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import api from "../api/client";
+import { useAuth } from "../hooks/useAuth";
 import { useToast } from "../components/ui/Toast";
 import { CONNECTORS, WEBHOOK_MAP } from "../constants/connectors";
 import Button from "../components/ui/Button";
@@ -8,7 +9,7 @@ import Modal from "../components/ui/Modal";
 
 export default function Conectores() {
   const toast = useToast();
-
+  const { user } = useAuth();
   const [selected, setSelected] = useState(null);
   const [exporting, setExporting] = useState(false);
   const [result, setResult] = useState(null);
@@ -24,16 +25,17 @@ export default function Conectores() {
     setExporting(true);
     setResult(null);
     try {
-      const currentYear = new Date().getFullYear();
       const res = await api.webhook(endpoint, {
         formato: "download",
         filtro_where: "(eliminada,neq,true)",
-        ejercicio: currentYear,
+        empresa_id: user.empresa_id,
+        ejercicio: new Date().getFullYear().toString(),
       });
       setResult(res);
       toast("Exportación completada", "success");
     } catch (err) {
-      toast(err.message, "error");
+      setResult({ error: err.message });
+      toast("Error exportando", "error");
     } finally {
       setExporting(false);
     }
@@ -63,8 +65,8 @@ export default function Conectores() {
               </div>
             </div>
             {c.active ? (
-              <span className="inline-block text-xs font-medium text-teal-600 bg-teal-50 rounded-full px-2.5 py-0.5">
-                Disponible
+              <span className="inline-block text-xs font-medium text-green-700 bg-green-50 rounded-full px-2.5 py-0.5">
+                Activo
               </span>
             ) : (
               <span className="inline-block text-xs font-medium text-slate-400 bg-slate-100 rounded-full px-2.5 py-0.5">
@@ -76,39 +78,37 @@ export default function Conectores() {
       </div>
 
       {/* Export modal */}
-      <Modal open={!!selected} onClose={() => { setSelected(null); setResult(null); }} title={selected ? `Exportar - ${selected.name}` : ""}>
+      <Modal open={!!selected} onClose={() => { setSelected(null); setResult(null); }} title={selected ? `Exportar — ${selected.name}` : ""}>
         {selected && (
           <div>
-            <p className="text-sm text-slate-600 mb-4">
-              Se exportarán todas las facturas no eliminadas del ejercicio {new Date().getFullYear()} en formato {selected.name}.
-            </p>
-
-            {!result && (
-              <Button onClick={handleExport} disabled={exporting} className="w-full justify-center">
-                {exporting ? "Exportando..." : "Exportar"}
-              </Button>
-            )}
-
-            {result && (
-              <div className="mt-4 space-y-3">
-                {(result.download_url || result.url) && (
-                  <a
-                    href={result.download_url || result.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 text-sm text-teal-600 hover:text-teal-700 font-medium"
-                  >
-                    <Icon name="download" size={16} /> Descargar archivo
-                  </a>
+            {result ? (
+              <div>
+                {result.error ? (
+                  <div className="bg-red-50 text-red-700 p-3 rounded-lg text-sm">{result.error}</div>
+                ) : (
+                  <div>
+                    <div className="bg-green-50 text-green-700 p-3 rounded-lg text-sm mb-3">Exportación completada</div>
+                    {result.download_url && (
+                      <a href={result.download_url} download className="text-teal-600 font-medium text-sm">
+                        ⬇ Descargar archivo
+                      </a>
+                    )}
+                    {result.contenido && (
+                      <pre className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs text-slate-600 max-h-64 overflow-auto whitespace-pre-wrap mt-3">
+                        {typeof result.contenido === "string" ? result.contenido : JSON.stringify(result.contenido, null, 2)}
+                      </pre>
+                    )}
+                  </div>
                 )}
-                {result.contenido && (
-                  <pre className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs text-slate-600 max-h-64 overflow-auto whitespace-pre-wrap">
-                    {typeof result.contenido === "string" ? result.contenido : JSON.stringify(result.contenido, null, 2)}
-                  </pre>
-                )}
-                {!result.download_url && !result.url && !result.contenido && (
-                  <p className="text-sm text-green-600">Exportación completada correctamente.</p>
-                )}
+              </div>
+            ) : (
+              <div>
+                <p className="text-sm text-slate-500 mb-4">
+                  Se exportarán todas las facturas contabilizadas de tu empresa en formato {selected.name}.
+                </p>
+                <Button onClick={handleExport} disabled={exporting}>
+                  {exporting ? "Exportando..." : "Exportar ahora"}
+                </Button>
               </div>
             )}
           </div>

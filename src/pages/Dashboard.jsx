@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 import api from "../api/client";
 import { useToast } from "../components/ui/Toast";
 import { fmt } from "../utils/format";
@@ -84,7 +84,7 @@ export default function Dashboard() {
 
         {/* Pie chart */}
         <div className="bg-white border border-slate-200 rounded-xl p-5">
-          <h2 className="text-sm font-semibold text-slate-600 mb-4">Por tipo de documento</h2>
+          <h2 className="text-sm font-semibold text-slate-600 mb-4">Por tipo</h2>
           {pieData.length === 0 ? (
             <div className="flex items-center justify-center h-[300px] text-slate-400 text-sm">Sin datos</div>
           ) : (
@@ -96,7 +96,6 @@ export default function Dashboard() {
                   ))}
                 </Pie>
                 <Tooltip />
-                <Legend />
               </PieChart>
             </ResponsiveContainer>
           )}

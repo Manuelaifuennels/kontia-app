@@ -1,12 +1,20 @@
 import React, { useState, useEffect, useCallback } from "react";
 import api from "../../api/client";
 import { useToast } from "../../components/ui/Toast";
+import { fmtDate } from "../../utils/format";
 import Button from "../../components/ui/Button";
 import Modal from "../../components/ui/Modal";
 import Field from "../../components/ui/Field";
 import Icon from "../../components/ui/Icon";
 
-const ROLES = [
+const ROLES_SHORT = [
+  { value: "admin", label: "Admin" },
+  { value: "editor", label: "Editor" },
+  { value: "contable", label: "Contable" },
+  { value: "usuario", label: "Usuario" },
+];
+
+const ROLES_LONG = [
   { value: "admin", label: "Admin — Acceso total" },
   { value: "editor", label: "Editor — Puede modificar facturas" },
   { value: "contable", label: "Contable — Solo contabilizar" },
@@ -16,7 +24,6 @@ const ROLES = [
 const ROLE_COLORS = {
   admin: "bg-purple-100 text-purple-700",
   editor: "bg-blue-100 text-blue-700",
-  contable: "bg-green-100 text-green-700",
   usuario: "bg-gray-100 text-gray-600",
 };
 
@@ -134,7 +141,7 @@ export default function UsuariosTab({ user }) {
                       {u.activo === "true" || u.activo === true ? "Activo" : "Inactivo"}
                     </button>
                   </td>
-                  <td className="px-4 py-2.5 text-slate-500 text-xs">{u.ultimo_login || "Nunca"}</td>
+                  <td className="px-4 py-2.5 text-slate-500 text-xs">{u.ultimo_login ? fmtDate(u.ultimo_login) : "Nunca"}</td>
                   <td className="px-4 py-2.5">
                     <Button variant="secondary" size="sm" onClick={() => { setEditUser(u); setEditRol(u.rol || "usuario"); }}>
                       <Icon name="edit" size={14} />
@@ -156,7 +163,7 @@ export default function UsuariosTab({ user }) {
             label="Rol"
             value={form.rol}
             onChange={(v) => setForm({ ...form, rol: v })}
-            options={ROLES}
+            options={ROLES_SHORT}
           />
           <div className="flex justify-end gap-2 pt-3">
             <Button variant="secondary" size="sm" onClick={() => setShowAdd(false)} type="button">Cancelar</Button>
@@ -172,7 +179,7 @@ export default function UsuariosTab({ user }) {
               label="Rol"
               value={editRol}
               onChange={setEditRol}
-              options={ROLES}
+              options={ROLES_LONG}
             />
             <div className="bg-slate-50 rounded-lg p-3 mb-3 text-xs text-slate-500 space-y-1">
               <div><b>Admin:</b> Acceso total incluyendo ajustes y usuarios.</div>

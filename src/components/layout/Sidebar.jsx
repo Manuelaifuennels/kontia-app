@@ -9,8 +9,8 @@ const NAV_ITEMS = [
   { key: "clientes", label: "Clientes", icon: "users" },
   { key: "resumen", label: "Resumen Fiscal", icon: "receipt" },
   { key: "conectores", label: "Conectores", icon: "link", perm: "export" },
-  { key: "verifactu", label: "F. Electronica", icon: "zap" },
-  { key: "conciliacion", label: "Conciliacion", icon: "bank" },
+  { key: "verifactu", label: "F. Electrónica", icon: "zap" },
+  { key: "conciliacion", label: "Conciliación", icon: "bank" },
   { key: "ajustes", label: "Ajustes", icon: "gear", perm: "ajustes" },
   { key: "papelera", label: "Papelera", icon: "trash", perm: "delete" },
 ];
@@ -67,7 +67,7 @@ export default function Sidebar({ currentPage, onNavigate, user, onLogout }) {
             className="flex items-center gap-1.5 mt-3 text-xs text-indigo-300/60 hover:text-red-400 transition-colors cursor-pointer"
           >
             <Icon name="logout" size={14} />
-            Cerrar sesion
+            Cerrar sesión
           </button>
         </div>
       )}

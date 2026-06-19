@@ -31,7 +31,7 @@ export default function SubirDocs({ onBack }) {
   const [progress, setProgress] = useState([]);
 
   function addFiles(fileList) {
-    setFiles((prev) => [...prev, ...Array.from(fileList)]);
+    setFiles([...fileList]);
   }
 
   async function handleUpload() {

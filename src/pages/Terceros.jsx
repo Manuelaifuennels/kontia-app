@@ -76,7 +76,7 @@ export default function Terceros({ tipo = "proveedores" }) {
     <div className="p-6">
       <div className="flex items-center justify-between mb-5">
         <h2 className="text-xl font-bold text-slate-800">{title}</h2>
-        <Button onClick={() => setShowAdd(true)}>
+        <Button onClick={() => { setForm({ nombre: "", nif: "", cuenta: "" }); setShowAdd(true); }}>
           <Icon name="plus" size={14} /> Nuevo
         </Button>
       </div>

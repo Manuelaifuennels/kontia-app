@@ -24,9 +24,9 @@ export default function HistorialTab({ historial }) {
             {rows.map((h) => (
               <tr key={h.Id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
                 <td className="px-4 py-2.5 text-slate-600 text-xs">{fmtDate(h.fecha_envio) || "—"}</td>
-                <td className="px-4 py-2.5 text-slate-700">{h.destinatario || "—"}</td>
-                <td className="px-4 py-2.5 text-slate-600">{h.id_documento || "—"}</td>
-                <td className="px-4 py-2.5 text-slate-600">{h.origen || "—"}</td>
+                <td className="px-4 py-2.5 text-slate-700">{h.destinatario || ""}</td>
+                <td className="px-4 py-2.5 text-slate-600">{h.id_documento || ""}</td>
+                <td className="px-4 py-2.5 text-slate-600">{h.origen || ""}</td>
                 <td className="px-4 py-2.5 text-slate-600 text-xs">{h.estado || ""}</td>
                 <td className="px-4 py-2.5 text-slate-500 text-xs">{h.error || ""}</td>
               </tr>
