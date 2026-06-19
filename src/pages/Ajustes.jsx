@@ -68,10 +68,13 @@ export default function Ajustes() {
   async function handleSaveConfig(data) {
     setSaving(true);
     try {
-      if (data.Id) {
-        await api.updateRecord("config", data);
+      const clean = { ...data };
+      delete clean.nc_order;
+      if (clean.Id) {
+        await api.updateRecord("config", clean);
       } else {
-        await api.createRecord("config", data);
+        delete clean.Id;
+        await api.createRecord("config", clean);
       }
       toast("Configuración guardada", "success");
       loadAll();

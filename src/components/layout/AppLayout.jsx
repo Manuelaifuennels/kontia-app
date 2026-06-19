@@ -38,7 +38,7 @@ export default function AppLayout() {
         user={user}
         onLogout={logout}
       />
-      <main className="flex-1 overflow-auto p-6">{renderPage()}</main>
+      <main className="flex-1 overflow-auto">{renderPage()}</main>
     </div>
   );
 }

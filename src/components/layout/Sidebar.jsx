@@ -59,14 +59,9 @@ export default function Sidebar({ currentPage, onNavigate, user, onLogout }) {
       {/* User info */}
       {user && (
         <div className="px-4 py-4 border-t border-white/10">
-          <p className="text-sm text-white font-medium truncate">{user.nombre}</p>
-          <p className="text-[11px] text-indigo-300/60 truncate">{user.empresa_nombre}</p>
-          {user.empresa_id && (
-            <p className="text-[10px] text-indigo-300/40 mt-0.5">
-              ID: {user.empresa_id}
-            </p>
-          )}
-          <p className="text-[10px] text-indigo-300/40 capitalize">{user.rol}</p>
+          <p className="text-sm text-white/70 font-medium truncate">{user.nombre || user.email}</p>
+          <p className="text-[11px] text-indigo-300/40 truncate">{user.empresa_nombre || `Empresa ${user.empresa_id}`}</p>
+          <p className="text-[10px] text-indigo-300/35 mt-0.5">ID: {user.empresa_id} — {user.rol || "admin"}</p>
           <button
             onClick={onLogout}
             className="flex items-center gap-1.5 mt-3 text-xs text-indigo-300/60 hover:text-red-400 transition-colors cursor-pointer"

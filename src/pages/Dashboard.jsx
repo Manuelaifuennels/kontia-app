@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 import api from "../api/client";
 import { useToast } from "../components/ui/Toast";
-import { fmtCurrency } from "../utils/format";
+import { fmt } from "../utils/format";
 
-const PIE_COLORS = ["#0d9488", "#7c3aed"];
+const PIE_COLORS = ["#0d9488", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316"];
 
 export default function Dashboard() {
   const toast = useToast();
@@ -21,7 +21,7 @@ export default function Dashboard() {
   const active = useMemo(() => facturas.filter((f) => !f.eliminada), [facturas]);
 
   const kpis = useMemo(() => {
-    const total = active.reduce((s, f) => s + (Number(f.total_factura) || 0), 0);
+    const total = active.reduce((s, f) => s + (parseFloat(f.total_factura || f.total) || 0), 0);
     const contabilizadas = active.filter((f) => f.estado === "completada" || f.estado === "contabilizada").length;
     const pendientes = active.filter((f) => f.estado !== "completada" && f.estado !== "contabilizada").length;
     const errores = active.filter((f) => f.estado === "error").length;
@@ -29,37 +29,27 @@ export default function Dashboard() {
   }, [active]);
 
   const barData = useMemo(() => {
-    const now = new Date();
-    const months = [];
-    for (let i = 7; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      months.push({
-        key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
-        label: d.toLocaleDateString("es-ES", { month: "short", year: "2-digit" }),
-        total: 0,
-        count: 0,
-      });
-    }
-    for (const f of active) {
-      if (!f.fecha_factura) continue;
-      const d = new Date(f.fecha_factura);
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      const m = months.find((mo) => mo.key === key);
-      if (m) {
-        m.total += Number(f.total_factura) || 0;
-        m.count++;
-      }
-    }
-    return months;
+    const byMonth = {};
+    active.forEach((f) => {
+      const m = (f.fecha_factura || f.fecha_subida || "").substring(0, 7);
+      if (m) byMonth[m] = (byMonth[m] || 0) + (parseFloat(f.total_factura || f.total) || 0);
+    });
+    return Object.entries(byMonth).sort().slice(-8).map(([k, v]) => ({
+      mes: k.substring(5),
+      total: Math.round(v),
+    }));
   }, [active]);
 
   const pieData = useMemo(() => {
-    const compra = active.filter((f) => f.tipo_documento === "compra").length;
-    const venta = active.filter((f) => f.tipo_documento === "venta").length;
-    return [
-      { name: "Compras", value: compra },
-      { name: "Ventas", value: venta },
-    ].filter((d) => d.value > 0);
+    const byTipo = {};
+    active.forEach((f) => {
+      const t = f.tipo_documento || "otro";
+      byTipo[t] = (byTipo[t] || 0) + 1;
+    });
+    return Object.entries(byTipo).map(([k, v]) => ({
+      name: k === "compra" ? "Compras" : k === "venta" ? "Ventas" : k,
+      value: v,
+    }));
   }, [active]);
 
   if (loading) {
@@ -72,7 +62,7 @@ export default function Dashboard() {
 
       {/* KPI cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <KpiCard label="Total facturado" value={fmtCurrency(kpis.total)} color="bg-teal-50 text-teal-700" />
+        <KpiCard label="Total facturado" value={`${fmt(kpis.total)} €`} color="bg-teal-50 text-teal-700" />
         <KpiCard label="Contabilizadas" value={kpis.contabilizadas} color="bg-green-50 text-green-700" />
         <KpiCard label="Pendientes" value={kpis.pendientes} color="bg-yellow-50 text-yellow-700" />
         <KpiCard label="Errores" value={kpis.errores} color="bg-red-50 text-red-700" />
@@ -84,14 +74,10 @@ export default function Dashboard() {
           <h2 className="text-sm font-semibold text-slate-600 mb-4">Evolución mensual</h2>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={barData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="label" tick={{ fontSize: 12 }} />
-              <YAxis tick={{ fontSize: 12 }} />
-              <Tooltip
-                formatter={(v) => fmtCurrency(v)}
-                contentStyle={{ borderRadius: 8, border: "1px solid #e2e8f0" }}
-              />
-              <Bar dataKey="total" fill="#0d9488" radius={[4, 4, 0, 0]} name="Total" />
+              <XAxis dataKey="mes" fontSize={12} />
+              <YAxis fontSize={11} />
+              <Tooltip formatter={(v) => `${fmt(v)} €`} />
+              <Bar dataKey="total" fill="#0d9488" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -104,7 +90,7 @@ export default function Dashboard() {
           ) : (
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
-                <Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={100} dataKey="value" label>
+                <Pie data={pieData} cx="50%" cy="50%" outerRadius={80} dataKey="value" label={({name, value}) => `${name}: ${value}`}>
                   {pieData.map((_, i) => (
                     <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
                   ))}

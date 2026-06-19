@@ -6,7 +6,7 @@ const STATUS_MAP = {
   pendiente: { label: "Pendiente", classes: "bg-yellow-100 text-yellow-700" },
   revision: { label: "Revisión", classes: "bg-yellow-100 text-yellow-700" },
   error: { label: "Error", classes: "bg-red-100 text-red-700" },
-  en_proceso: { label: "Procesando", classes: "bg-purple-100 text-purple-700" },
+  en_proceso: { label: "En proceso", classes: "bg-blue-100 text-blue-700" },
   procesando: { label: "Procesando", classes: "bg-purple-100 text-purple-700" },
   contabilizando: { label: "Contabilizando", classes: "bg-blue-100 text-blue-700" },
 };

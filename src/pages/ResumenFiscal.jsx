@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import api from "../api/client";
 import { useToast } from "../components/ui/Toast";
-import { fmtCurrency } from "../utils/format";
+import { fmt } from "../utils/format";
 
 const BASE_KEYS = ["base_iva_21", "base_iva_10", "base_iva_4", "base_iva_5", "base_iva_12"];
 const CUOTA_KEYS = ["cuota_iva_21", "cuota_iva_10", "cuota_iva_4", "cuota_iva_5", "cuota_iva_12"];
@@ -20,7 +20,7 @@ function getQuarter(dateStr) {
   return 3;
 }
 
-const Q_LABELS = ["T1 (Ene-Mar)", "T2 (Abr-Jun)", "T3 (Jul-Sep)", "T4 (Oct-Dic)"];
+const Q_LABELS = ["T1", "T2", "T3", "T4"];
 
 export default function ResumenFiscal() {
   const toast = useToast();
@@ -49,7 +49,7 @@ export default function ResumenFiscal() {
       if (q === null) continue;
       qs[q].base += sumFields(f, BASE_KEYS);
       qs[q].iva += sumFields(f, CUOTA_KEYS);
-      qs[q].retencion += Number(f.cuota_retencion) || Number(f.retencion) || 0;
+      qs[q].retencion += parseFloat(f.retencion || f.cuota_retencion) || 0;
     }
     return qs;
   }, [active]);
@@ -70,15 +70,15 @@ export default function ResumenFiscal() {
             <div className="space-y-1.5 text-sm">
               <div className="flex justify-between">
                 <span className="text-slate-500">Base imponible</span>
-                <span className="font-medium text-slate-700">{fmtCurrency(q.base)}</span>
+                <span className="font-medium text-slate-700">{fmt(q.base)} €</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">IVA</span>
-                <span className="font-medium text-teal-700">{fmtCurrency(q.iva)}</span>
+                <span className="font-medium text-blue-700">{fmt(q.iva)} €</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Retención</span>
-                <span className="font-medium text-amber-700">{fmtCurrency(q.retencion)}</span>
+                <span className="font-medium text-amber-600">{fmt(q.retencion)} €</span>
               </div>
             </div>
           </div>
@@ -87,20 +87,16 @@ export default function ResumenFiscal() {
 
       {/* Bar chart */}
       <div className="bg-white border border-slate-200 rounded-xl p-5">
-        <h2 className="text-sm font-semibold text-slate-600 mb-4">Desglose por trimestre</h2>
-        <ResponsiveContainer width="100%" height={350}>
+        <h2 className="text-sm font-semibold text-slate-600 mb-4">IVA e IRPF por trimestre</h2>
+        <ResponsiveContainer width="100%" height={280}>
           <BarChart data={quarters}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-            <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-            <YAxis tick={{ fontSize: 12 }} />
-            <Tooltip
-              formatter={(v) => fmtCurrency(v)}
-              contentStyle={{ borderRadius: 8, border: "1px solid #e2e8f0" }}
-            />
+            <XAxis dataKey="name" fontSize={12} />
+            <YAxis fontSize={11} />
+            <Tooltip formatter={(v) => `${fmt(v)} €`} />
+            <Bar dataKey="base" fill="#0d9488" name="Base" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="iva" fill="#3b82f6" name="IVA" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="retencion" fill="#f59e0b" name="Retención" radius={[4, 4, 0, 0]} />
             <Legend />
-            <Bar dataKey="base" fill="#0d9488" name="Base imponible" radius={[4, 4, 0, 0]} />
-            <Bar dataKey="iva" fill="#7c3aed" name="IVA" radius={[4, 4, 0, 0]} />
-            <Bar dataKey="retencion" fill="#d97706" name="Retención" radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
