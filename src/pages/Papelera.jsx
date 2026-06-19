@@ -12,7 +12,6 @@ export default function Papelera() {
   const [facturas, setFacturas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [sel, setSel] = useState({});
-  const [selAll, setSelAll] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -61,18 +60,7 @@ export default function Papelera() {
           <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
             <thead>
               <tr className="bg-slate-50">
-                <th className="px-3 py-2.5 w-10">
-                  <input
-                    type="checkbox"
-                    checked={selAll}
-                    onChange={(e) => {
-                      setSelAll(e.target.checked);
-                      const n = {};
-                      facturas.forEach((f) => (n[f.Id] = e.target.checked));
-                      setSel(n);
-                    }}
-                  />
-                </th>
+                <th className="px-3 py-2.5 w-10"></th>
                 {["Estado", "Tipo", "Nº Factura", "Emisor", "Total", "Fecha", "Cuenta"].map((h) => (
                   <th key={h} className="px-3 py-2.5 text-left text-xs font-semibold text-slate-500 border-b border-slate-200">{h}</th>
                 ))}

@@ -63,7 +63,7 @@ export default function FacturaElectronica() {
               </thead>
             </table>
             <div className="py-5 text-slate-400 text-sm">
-              No hay {DOC_TYPES.find((d) => d.value === tipoDoc)?.label?.toLowerCase() || tipoDoc} registradas. Se activará cuando Veri*Factu esté configurado.
+              No hay {tipoDoc} registradas. Se activará cuando Veri*Factu esté configurado.
             </div>
           </div>
         </div>

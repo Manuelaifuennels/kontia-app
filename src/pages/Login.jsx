@@ -26,7 +26,7 @@ export default function Login() {
       const data = await api.post(endpoint, payload);
       login(data.user, data.token);
     } catch (err) {
-      setError(err.message || "Error de conexion");
+      setError(err.message || "Error de conexión");
     } finally {
       setLoading(false);
     }
@@ -43,7 +43,7 @@ export default function Login() {
           <h1 className="text-3xl font-bold text-white tracking-wide">
             Kon<span className="text-teal-400">t</span>ia
           </h1>
-          <p className="text-sm text-indigo-300/60 mt-1">contabilidad inteligente</p>
+          <p className="text-sm text-indigo-300/60 mt-1">Contabilidad inteligente con IA</p>
         </div>
 
         {/* Card */}
@@ -57,7 +57,7 @@ export default function Login() {
                 className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors capitalize cursor-pointer
                   ${mode === tab ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
               >
-                {tab === "login" ? "Iniciar sesion" : "Registro"}
+                {tab === "login" ? "Iniciar sesión" : "Registrarse"}
               </button>
             ))}
           </div>
@@ -71,7 +71,7 @@ export default function Login() {
               <>
                 <input
                   type="text"
-                  placeholder="Nombre"
+                  placeholder="Nombre completo"
                   value={form.nombre}
                   onChange={set("nombre")}
                   required
@@ -90,7 +90,7 @@ export default function Login() {
 
             <input
               type="email"
-              placeholder="Email"
+              placeholder="tu@email.com"
               value={form.email}
               onChange={set("email")}
               required
@@ -98,7 +98,7 @@ export default function Login() {
             />
             <input
               type="password"
-              placeholder="Password"
+              placeholder="••••••••"
               value={form.password}
               onChange={set("password")}
               required
@@ -110,15 +110,13 @@ export default function Login() {
               disabled={loading}
               className="w-full py-2.5 bg-teal-500 text-white text-sm font-medium rounded-lg hover:bg-teal-600 active:bg-teal-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
-              {loading ? "Cargando..." : mode === "login" ? "Entrar" : "Crear cuenta"}
+              {loading ? "Procesando..." : mode === "login" ? "Entrar" : "Crear cuenta"}
             </button>
           </form>
 
-          {mode === "login" && (
-            <p className="mt-4 text-center text-xs text-gray-400">
-              Demo: demo@kontia.es / demo2024
-            </p>
-          )}
+          <p className="mt-4 text-center text-xs text-gray-400">
+            Demo: demo@kontia.es / demo2024
+          </p>
         </div>
       </div>
     </div>

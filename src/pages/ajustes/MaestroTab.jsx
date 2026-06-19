@@ -6,12 +6,7 @@ import Icon from "../../components/ui/Icon";
 import Modal from "../../components/ui/Modal";
 import Field from "../../components/ui/Field";
 
-const TIPO_OPTIONS = [
-  { value: "gasto", label: "Gasto" },
-  { value: "ingreso", label: "Ingreso" },
-  { value: "iva", label: "IVA" },
-  { value: "tercero", label: "Tercero" },
-];
+const TIPO_OPTIONS = ["gasto", "ingreso", "iva", "tercero"];
 
 const TIPO_COLORS = {
   gasto: "bg-indigo-100 text-indigo-700",
@@ -53,9 +48,9 @@ export default function MaestroTab({ maestro, onReload }) {
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200">
-              <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Subcuenta</th>
-              <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Descripción</th>
-              <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Tipo</th>
+              <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500">Subcuenta</th>
+              <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500">Descripción</th>
+              <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500">Tipo</th>
             </tr>
           </thead>
           <tbody>
@@ -65,7 +60,7 @@ export default function MaestroTab({ maestro, onReload }) {
                 <td className="px-4 py-2.5 text-slate-600">{m.descripcion || "—"}</td>
                 <td className="px-4 py-2.5">
                   <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${TIPO_COLORS[m.tipo] || TIPO_COLORS.tercero}`}>
-                    {m.tipo || "—"}
+                    {m.tipo || ""}
                   </span>
                 </td>
               </tr>

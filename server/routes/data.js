@@ -79,7 +79,8 @@ router.patch('/:table', async (req, res) => {
       return res.status(403).json({ error: 'Sin acceso a este registro' });
     }
 
-    const data = await ncPatch(`/tables/${tableId}/records`, req.body);
+    const body = { ...req.body, [col]: req.user.empresa_id };
+    const data = await ncPatch(`/tables/${tableId}/records`, body);
     res.json(data);
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message });

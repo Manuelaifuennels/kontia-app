@@ -10,9 +10,7 @@ export function fmt(value) {
 
 export function fmtDate(value) {
   if (!value) return "—";
-  const d = new Date(value);
-  if (isNaN(d)) return "—";
-  return d.toISOString().slice(0, 10);
+  return String(value).substring(0, 10);
 }
 
 export function fmtCurrency(value) {
