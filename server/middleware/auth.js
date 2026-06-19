@@ -1,8 +1,8 @@
-const jwt = require('jsonwebtoken');
+import jwt from 'jsonwebtoken';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
-function signToken(user) {
+export function signToken(user) {
   return jwt.sign(
     {
       id: user.id || user.Id,
@@ -17,7 +17,7 @@ function signToken(user) {
   );
 }
 
-function authMiddleware(req, res, next) {
+export function authMiddleware(req, res, next) {
   const header = req.headers.authorization;
   const token = header?.startsWith('Bearer ')
     ? header.slice(7)
@@ -34,5 +34,3 @@ function authMiddleware(req, res, next) {
     return res.status(401).json({ error: 'Token inválido o expirado' });
   }
 }
-
-module.exports = { authMiddleware, signToken };

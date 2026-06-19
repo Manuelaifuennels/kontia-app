@@ -1,6 +1,6 @@
-const { Router } = require('express');
-const { nc, ncPost, ncPatch, ncDel, TABLE_IDS } = require('../nocodb');
-const { authMiddleware } = require('../middleware/auth');
+import { Router } from 'express';
+import { nc, ncPost, ncPatch, ncDel, TABLE_IDS } from '../nocodb.js';
+import { authMiddleware } from '../middleware/auth.js';
 
 const router = Router();
 router.use(authMiddleware);
@@ -15,7 +15,6 @@ function resolveTable(req, res) {
   return tableId;
 }
 
-// List records
 router.get('/:table', async (req, res) => {
   try {
     const tableId = resolveTable(req, res);
@@ -30,7 +29,6 @@ router.get('/:table', async (req, res) => {
     if (offset) params.set('offset', offset);
     if (sort) params.set('sort', sort);
     if (fields) params.set('fields', fields);
-    // Forward any other query params
     for (const [k, v] of Object.entries(rest)) {
       params.set(k, v);
     }
@@ -42,7 +40,6 @@ router.get('/:table', async (req, res) => {
   }
 });
 
-// Create record
 router.post('/:table', async (req, res) => {
   try {
     const tableId = resolveTable(req, res);
@@ -59,7 +56,6 @@ router.post('/:table', async (req, res) => {
   }
 });
 
-// Update records
 router.patch('/:table', async (req, res) => {
   try {
     const tableId = resolveTable(req, res);
@@ -72,7 +68,6 @@ router.patch('/:table', async (req, res) => {
   }
 });
 
-// Delete record
 router.delete('/:table/:id', async (req, res) => {
   try {
     const tableId = resolveTable(req, res);
@@ -85,4 +80,4 @@ router.delete('/:table/:id', async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;

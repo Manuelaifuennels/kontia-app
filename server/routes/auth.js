@@ -1,5 +1,5 @@
-const { Router } = require('express');
-const { authMiddleware, signToken } = require('../middleware/auth');
+import { Router } from 'express';
+import { authMiddleware, signToken } from '../middleware/auth.js';
 
 const router = Router();
 const WEBHOOK_URL = process.env.WEBHOOK_URL;
@@ -19,7 +19,6 @@ async function forwardToWebhook(endpoint, body) {
   return res.json();
 }
 
-// Login
 router.post('/login', async (req, res) => {
   try {
     const result = await forwardToWebhook('kontia-login', req.body);
@@ -42,7 +41,6 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// Register
 router.post('/register', async (req, res) => {
   try {
     const result = await forwardToWebhook('kontia-registro', {
@@ -68,9 +66,8 @@ router.post('/register', async (req, res) => {
   }
 });
 
-// Current user
 router.get('/me', authMiddleware, (req, res) => {
   res.json({ user: req.user });
 });
 
-module.exports = router;
+export default router;

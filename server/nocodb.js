@@ -1,7 +1,7 @@
 const NOCO_URL = process.env.NOCO_URL;
 const NOCO_TOKEN = process.env.NOCO_TOKEN;
 
-const TABLE_IDS = {
+export const TABLE_IDS = {
   facturas: 'mztxvchnw7jq49d',
   proveedores: 'mpomtfoa06welx3',
   clientes: 'ms302pf6e8v6q4x',
@@ -17,7 +17,7 @@ const TABLE_IDS = {
   movimientos: 'mei89o3qe3zlmw6',
 };
 
-async function nc(path, opts = {}) {
+export async function nc(path, opts = {}) {
   const url = `${NOCO_URL}${path}`;
   const res = await fetch(url, {
     ...opts,
@@ -36,16 +36,14 @@ async function nc(path, opts = {}) {
   return res.json();
 }
 
-function ncPost(path, body) {
+export function ncPost(path, body) {
   return nc(path, { method: 'POST', body: JSON.stringify(body) });
 }
 
-function ncPatch(path, body) {
+export function ncPatch(path, body) {
   return nc(path, { method: 'PATCH', body: JSON.stringify(body) });
 }
 
-function ncDel(path, body) {
+export function ncDel(path, body) {
   return nc(path, { method: 'DELETE', body: body ? JSON.stringify(body) : undefined });
 }
-
-module.exports = { nc, ncPost, ncPatch, ncDel, TABLE_IDS };

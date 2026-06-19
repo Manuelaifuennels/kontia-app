@@ -1,14 +1,15 @@
-require('dotenv').config();
+import 'dotenv/config';
+import express from 'express';
+import cors from 'cors';
+import cookieParser from 'cookie-parser';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-const express = require('express');
-const cors = require('cors');
-const cookieParser = require('cookie-parser');
-const path = require('path');
+import authRoutes from './routes/auth.js';
+import dataRoutes from './routes/data.js';
+import webhookRoutes from './routes/webhooks.js';
 
-const authRoutes = require('./routes/auth');
-const dataRoutes = require('./routes/data');
-const webhookRoutes = require('./routes/webhooks');
-
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 3000;
 const isProd = process.env.NODE_ENV === 'production';
@@ -20,12 +21,10 @@ if (!isProd) {
   app.use(cors({ origin: 'http://localhost:5173', credentials: true }));
 }
 
-// API routes
 app.use('/api/auth', authRoutes);
 app.use('/api/data', dataRoutes);
 app.use('/api/webhook', webhookRoutes);
 
-// Production: serve built frontend
 if (isProd) {
   const distPath = path.join(__dirname, '..', 'dist');
   app.use(express.static(distPath));
