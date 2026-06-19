@@ -43,9 +43,9 @@ export default function MaestroTab({ maestro, onReload }) {
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-semibold text-slate-700">Maestro de cuentas</h3>
+        <h3 className="text-sm font-semibold text-slate-700">Plan contable</h3>
         <Button size="sm" onClick={() => setShowAdd(true)}>
-          <Icon name="plus" size={16} /> Nueva cuenta
+          <Icon name="plus" size={16} /> Añadir cuenta
         </Button>
       </div>
 
@@ -54,7 +54,7 @@ export default function MaestroTab({ maestro, onReload }) {
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200">
               <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Subcuenta</th>
-              <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Descripcion</th>
+              <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Descripción</th>
               <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Tipo</th>
             </tr>
           </thead>
@@ -72,7 +72,7 @@ export default function MaestroTab({ maestro, onReload }) {
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={3} className="px-4 py-8 text-center text-slate-400">Sin cuentas</td>
+                <td colSpan={3} className="px-4 py-8 text-center text-slate-400">Sin cuentas. Añade al plan contable.</td>
               </tr>
             )}
           </tbody>
@@ -81,8 +81,8 @@ export default function MaestroTab({ maestro, onReload }) {
 
       <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Nueva cuenta">
         <form onSubmit={handleAdd} className="space-y-1">
-          <Field label="Subcuenta" value={form.subcuenta} onChange={(v) => setForm({ ...form, subcuenta: v })} />
-          <Field label="Descripcion" value={form.descripcion} onChange={(v) => setForm({ ...form, descripcion: v })} />
+          <Field label="Subcuenta" value={form.subcuenta} onChange={(v) => setForm({ ...form, subcuenta: v })} placeholder="6290001" />
+          <Field label="Descripción" value={form.descripcion} onChange={(v) => setForm({ ...form, descripcion: v })} placeholder="Otros servicios" />
           <Field label="Tipo" value={form.tipo} onChange={(v) => setForm({ ...form, tipo: v })} options={TIPO_OPTIONS} />
           <div className="flex justify-end gap-2 pt-3">
             <Button variant="ghost" size="sm" onClick={() => setShowAdd(false)} type="button">Cancelar</Button>

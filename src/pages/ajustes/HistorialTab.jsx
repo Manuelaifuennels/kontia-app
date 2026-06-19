@@ -6,7 +6,7 @@ export default function HistorialTab({ historial }) {
 
   return (
     <div>
-      <h3 className="text-sm font-semibold text-slate-700 mb-4">Historial de correos</h3>
+      <h3 className="text-sm font-semibold text-slate-700 mb-4">Historial de envío de correos</h3>
 
       <div className="overflow-x-auto border border-slate-200 rounded-xl">
         <table className="w-full text-sm">
@@ -27,21 +27,13 @@ export default function HistorialTab({ historial }) {
                 <td className="px-4 py-2.5 text-slate-700">{h.destinatario || "—"}</td>
                 <td className="px-4 py-2.5 text-slate-600">{h.id_documento || "—"}</td>
                 <td className="px-4 py-2.5 text-slate-600">{h.origen || "—"}</td>
-                <td className="px-4 py-2.5">
-                  <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                    h.estado === "enviado" ? "bg-green-100 text-green-700"
-                    : h.estado === "error" ? "bg-red-100 text-red-700"
-                    : "bg-gray-100 text-gray-600"
-                  }`}>
-                    {h.estado || "—"}
-                  </span>
-                </td>
-                <td className="px-4 py-2.5 text-slate-500 text-xs">{h.error || "—"}</td>
+                <td className="px-4 py-2.5 text-slate-600 text-xs">{h.estado || ""}</td>
+                <td className="px-4 py-2.5 text-slate-500 text-xs">{h.error || ""}</td>
               </tr>
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-slate-400">Sin historial de correos</td>
+                <td colSpan={6} className="px-4 py-8 text-center text-slate-400">Sin correos</td>
               </tr>
             )}
           </tbody>

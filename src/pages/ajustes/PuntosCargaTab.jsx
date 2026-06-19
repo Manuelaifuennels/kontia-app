@@ -8,7 +8,7 @@ import Field from "../../components/ui/Field";
 
 const TIPO_OPTIONS = [
   { value: "email", label: "Email" },
-  { value: "carpeta", label: "Carpeta" },
+  { value: "carpeta", label: "Carpeta local" },
   { value: "api", label: "API" },
   { value: "ftp", label: "FTP" },
 ];
@@ -57,7 +57,10 @@ export default function PuntosCargaTab() {
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-semibold text-slate-700">Puntos de carga</h3>
+        <div>
+          <h3 className="text-sm font-semibold text-slate-700">Puntos de carga</h3>
+          <p className="text-xs text-slate-400 mt-0.5">Orígenes de documentos (email, carpeta, API)</p>
+        </div>
         <Button size="sm" onClick={() => setShowAdd(true)}>
           <Icon name="plus" size={16} /> Nuevo punto
         </Button>
@@ -84,7 +87,7 @@ export default function PuntosCargaTab() {
                     </span>
                   </td>
                   <td className="px-4 py-2.5 text-slate-700">{r.punto || "—"}</td>
-                  <td className="px-4 py-2.5 text-slate-600">{r.email_asociado || "—"}</td>
+                  <td className="px-4 py-2.5 text-slate-600">{r.email_asociado || r.email || ""}</td>
                 </tr>
               ))}
               {rows.length === 0 && (
@@ -100,8 +103,8 @@ export default function PuntosCargaTab() {
       <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Nuevo punto de carga">
         <form onSubmit={handleAdd} className="space-y-1">
           <Field label="Tipo" value={form.tipo} onChange={(v) => setForm({ ...form, tipo: v })} options={TIPO_OPTIONS} />
-          <Field label="Punto de carga" value={form.punto} onChange={(v) => setForm({ ...form, punto: v })} />
-          <Field label="Email asociado" value={form.email_asociado} onChange={(v) => setForm({ ...form, email_asociado: v })} type="email" />
+          <Field label="Punto de carga" value={form.punto} onChange={(v) => setForm({ ...form, punto: v })} placeholder={form.tipo === "email" ? "facturas@miempresa.com" : "/ruta/carpeta"} />
+          <Field label="Email asociado" value={form.email_asociado} onChange={(v) => setForm({ ...form, email_asociado: v })} type="email" placeholder="notificaciones@miempresa.com" />
           <div className="flex justify-end gap-2 pt-3">
             <Button variant="ghost" size="sm" onClick={() => setShowAdd(false)} type="button">Cancelar</Button>
             <Button size="sm" type="submit">Crear</Button>
