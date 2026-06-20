@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState } from "react";
 import api from "../api/client";
 import { useToast } from "../components/ui/Toast";
 import { fmt, fmtDate } from "../utils/format";
@@ -6,27 +6,9 @@ import Button from "../components/ui/Button";
 import Icon from "../components/ui/Icon";
 import StatusBadge from "../components/ui/StatusBadge";
 
-export default function Papelera() {
+export default function Papelera({ facturas = [], onReload }) {
   const toast = useToast();
-
-  const [facturas, setFacturas] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [sel, setSel] = useState({});
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await api.listRecords("facturas", { limit: 500, sort: "-fecha_factura" });
-      const all = Array.isArray(data) ? data : data?.list || [];
-      setFacturas(all.filter((f) => f.eliminada));
-    } catch (err) {
-      toast(err.message, "error");
-    } finally {
-      setLoading(false);
-    }
-  }, [toast]);
-
-  useEffect(() => { load(); }, [load]);
 
   async function handleRestore() {
     const ids = Object.keys(sel).filter((k) => sel[k]).map(Number);
@@ -36,7 +18,7 @@ export default function Papelera() {
     }
     setSel({});
     toast(`${ids.length} facturas restauradas`, "success");
-    load();
+    if (onReload) onReload();
   }
 
   return (
@@ -48,9 +30,7 @@ export default function Papelera() {
         </Button>
       </div>
 
-      {loading ? (
-        <div className="text-center py-16 text-slate-400">Cargando...</div>
-      ) : facturas.length === 0 ? (
+      {facturas.length === 0 ? (
         <div className="bg-white border border-slate-200 rounded-xl p-12 text-center">
           <Icon name="trash" size={40} className="text-slate-300 mx-auto mb-3" />
           <div className="text-slate-400">Papelera vacía</div>

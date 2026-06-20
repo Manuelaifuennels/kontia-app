@@ -1,11 +1,6 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { useAuth } from "../../hooks/useAuth";
-
-function StatusDot({ connected }) {
-  return (
-    <span className={`inline-block w-2 h-2 rounded-full mr-2 ${connected ? "bg-green-500" : "bg-gray-300"}`} />
-  );
-}
+import api from "../../api/client";
 
 const WEBHOOKS = [
   "kontia-login",
@@ -21,12 +16,18 @@ const WEBHOOKS = [
 
 export default function ConexionesTab() {
   const { user } = useAuth();
+  const [status, setStatus] = useState(null);
 
-  const services = [
-    { label: "ID Empresa", value: user?.empresa_id || user?.id_empresa || "—" },
-    { label: "NocoDB", connected: true },
-    { label: "n8n Webhooks", connected: true },
-    { label: "MinIO", connected: true },
+  useEffect(() => {
+    api.get("/status").then(setStatus).catch(() => {});
+  }, []);
+
+  const rows = [
+    ["ID Empresa", user?.empresa_id],
+    ["NocoDB", status?.noco || "", "🟢"],
+    ["n8n Webhooks", status?.webhooks || "", "🟢"],
+    ["MinIO", status?.minio || "", "🟢"],
+    ["Webhooks activos", WEBHOOKS.join(", ")],
   ];
 
   return (
@@ -36,29 +37,13 @@ export default function ConexionesTab() {
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
         <table className="w-full text-sm">
           <tbody>
-            {services.map((s, i) => (
+            {rows.map(([label, value, indicator], i) => (
               <tr key={i} className="border-b border-slate-100">
-                <td className="px-4 py-3 text-slate-700 font-semibold w-40">{s.label}</td>
-                <td className="px-4 py-3 text-slate-600">
-                  {s.value ? (
-                    <span className="text-sm">{s.value}</span>
-                  ) : (
-                    <span className="flex items-center">
-                      <StatusDot connected={s.connected} />
-                      <span className={s.connected ? "text-green-700" : "text-gray-500"}>
-                        {s.connected ? "Conectado" : "Desconectado"}
-                      </span>
-                    </span>
-                  )}
-                </td>
+                <td className="px-4 py-3 text-slate-700 font-semibold w-40">{label}</td>
+                <td className="px-4 py-3 text-slate-600 text-xs break-all">{value}</td>
+                {indicator && <td className="px-4 py-3">{indicator}</td>}
               </tr>
             ))}
-            <tr className="border-b border-slate-100">
-              <td className="px-4 py-3 text-slate-700 font-semibold align-top">Webhooks activos</td>
-              <td className="px-4 py-3 text-slate-600 text-xs break-all">
-                {WEBHOOKS.join(", ")}
-              </td>
-            </tr>
           </tbody>
         </table>
       </div>

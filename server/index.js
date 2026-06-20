@@ -25,6 +25,14 @@ app.use('/api/auth', authRoutes);
 app.use('/api/data', dataRoutes);
 app.use('/api/webhook', webhookRoutes);
 
+app.get('/api/status', (req, res) => {
+  res.json({
+    noco: (process.env.NOCO_URL || '').replace('https://', ''),
+    webhooks: (process.env.WEBHOOK_URL || '').replace('https://', ''),
+    minio: (process.env.MINIO_URL || '').replace('https://', ''),
+  });
+});
+
 if (isProd) {
   const distPath = path.join(__dirname, '..', 'dist');
   app.use(express.static(distPath));
