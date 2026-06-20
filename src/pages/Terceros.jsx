@@ -39,7 +39,7 @@ export default function Terceros({ tipo = "proveedores" }) {
   const enriched = useMemo(() => {
     return records.map((t) => {
       const fs = facturas.filter((f) => {
-        if (f.eliminada) return false;
+        if (f.eliminada === true || f.eliminada === "true") return false;
         if (isProv) {
           return f.nombre_emisor === t.nombre_proveedor || f.nif_emisor === t.nif_proveedor;
         }

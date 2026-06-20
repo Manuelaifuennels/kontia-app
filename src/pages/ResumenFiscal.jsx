@@ -35,7 +35,7 @@ export default function ResumenFiscal() {
       .finally(() => setLoading(false));
   }, [toast]);
 
-  const active = useMemo(() => facturas.filter((f) => !f.eliminada), [facturas]);
+  const active = useMemo(() => facturas.filter((f) => f.eliminada !== true && f.eliminada !== "true"), [facturas]);
 
   const quarters = useMemo(() => {
     const qs = [0, 1, 2, 3].map((i) => ({

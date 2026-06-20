@@ -18,7 +18,7 @@ export default function Dashboard() {
       .finally(() => setLoading(false));
   }, [toast]);
 
-  const active = useMemo(() => facturas.filter((f) => !f.eliminada), [facturas]);
+  const active = useMemo(() => facturas.filter((f) => f.eliminada !== true && f.eliminada !== "true"), [facturas]);
 
   const kpis = useMemo(() => {
     const total = active.reduce((s, f) => s + (parseFloat(f.total_factura || f.total) || 0), 0);

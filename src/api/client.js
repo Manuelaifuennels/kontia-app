@@ -11,7 +11,7 @@ async function apiFetch(path, opts = {}) {
 
   const res = await fetch(`/api${path}`, { ...opts, headers });
 
-  if (res.status === 401) {
+  if (res.status === 401 && !path.startsWith("/auth/")) {
     localStorage.removeItem("kontia_user");
     localStorage.removeItem("kontia_token");
     window.location.href = "/login";

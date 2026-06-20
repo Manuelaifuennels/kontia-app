@@ -28,7 +28,7 @@ export default function AppLayout() {
     if (currentPage === "papelera") loadFacturas();
   }, [currentPage, loadFacturas]);
 
-  const facPapelera = useMemo(() => facturas.filter((f) => f.eliminada), [facturas]);
+  const facPapelera = useMemo(() => facturas.filter((f) => f.eliminada === true || f.eliminada === "true"), [facturas]);
 
   const PAGES = {
     contabilidad: () => <Contabilidad />,

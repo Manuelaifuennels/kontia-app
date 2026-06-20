@@ -99,7 +99,7 @@ export default function Contabilidad() {
 
   useEffect(() => { loadFacturas(); }, [loadFacturas]);
 
-  const facActivas = useMemo(() => facturas.filter((f) => !f.eliminada), [facturas]);
+  const facActivas = useMemo(() => facturas.filter((f) => f.eliminada !== true && f.eliminada !== "true"), [facturas]);
 
   const filtered = useMemo(() => {
     if (filtro === "all") return facActivas;
@@ -229,7 +229,7 @@ export default function Contabilidad() {
               {filtered.length === 0 && (
                 <tr>
                   <td colSpan={columns.length + 1} className="px-4 py-12 text-center text-slate-400 text-sm">
-                    {facActivas.length === 0 ? "Cargando facturas..." : "No hay facturas con este filtro"}
+                    {loading ? "Cargando facturas..." : facActivas.length === 0 ? "No hay facturas" : "No hay facturas con este filtro"}
                   </td>
                 </tr>
               )}
