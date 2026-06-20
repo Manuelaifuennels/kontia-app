@@ -13,11 +13,12 @@ function sumFields(f, keys) {
 
 function getQuarter(dateStr) {
   if (!dateStr) return null;
-  const m = new Date(dateStr).getMonth();
-  if (m < 3) return 0;
-  if (m < 6) return 1;
-  if (m < 9) return 2;
-  return 3;
+  const m = dateStr.substring(5, 7);
+  if (["01", "02", "03"].includes(m)) return 0;
+  if (["04", "05", "06"].includes(m)) return 1;
+  if (["07", "08", "09"].includes(m)) return 2;
+  if (["10", "11", "12"].includes(m)) return 3;
+  return null;
 }
 
 const Q_LABELS = ["T1", "T2", "T3", "T4"];
@@ -62,31 +63,8 @@ export default function ResumenFiscal() {
     <div className="p-6">
       <h1 className="text-xl font-bold text-slate-800 mb-6">Resumen Fiscal</h1>
 
-      {/* KPI cards per quarter */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        {quarters.map((q, i) => (
-          <div key={i} className="bg-white border border-slate-200 rounded-xl p-4">
-            <p className="text-xs font-semibold text-slate-500 mb-3">{q.name}</p>
-            <div className="space-y-1.5 text-sm">
-              <div className="flex justify-between">
-                <span className="text-slate-500">Base imponible</span>
-                <span className="font-medium text-slate-700">{fmt(q.base)} €</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">IVA</span>
-                <span className="font-medium text-blue-700">{fmt(q.iva)} €</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Retención</span>
-                <span className="font-medium text-amber-600">{fmt(q.retencion)} €</span>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
       {/* Bar chart */}
-      <div className="bg-white border border-slate-200 rounded-xl p-5">
+      <div className="bg-white border border-slate-200 rounded-xl p-5 mb-4">
         <h2 className="text-sm font-semibold text-slate-600 mb-4">IVA e IRPF por trimestre</h2>
         <ResponsiveContainer width="100%" height={280}>
           <BarChart data={quarters}>
@@ -99,6 +77,20 @@ export default function ResumenFiscal() {
             <Legend />
           </BarChart>
         </ResponsiveContainer>
+      </div>
+
+      {/* KPI cards per quarter */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {quarters.map((q, i) => (
+          <div key={i} className="bg-white border border-slate-200 rounded-xl p-4">
+            <p className="text-base font-bold text-slate-700 mb-2">{q.name}</p>
+            <div className="space-y-1 text-xs">
+              <div className="text-slate-500">Base: <b className="text-slate-700">{fmt(q.base)} €</b></div>
+              <div className="text-slate-500">IVA: <b className="text-blue-600">{fmt(q.iva)} €</b></div>
+              <div className="text-slate-500">Retención: <b className="text-amber-600">{fmt(q.retencion)} €</b></div>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );

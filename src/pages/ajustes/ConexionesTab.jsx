@@ -10,12 +10,12 @@ function StatusDot({ connected }) {
 const WEBHOOKS = [
   "kontia-login",
   "kontia-registro",
-  "procesar-factura",
   "exportar-csv",
   "exportar-a3",
   "exportar-contaplus",
   "exportar-contasol",
   "conciliacion-bancaria",
+  "procesar-factura",
   "separar-pdf",
 ];
 
