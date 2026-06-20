@@ -4,6 +4,22 @@ import { authMiddleware, signToken } from '../middleware/auth.js';
 const router = Router();
 const WEBHOOK_URL = process.env.WEBHOOK_URL;
 
+const loginAttempts = new Map();
+function rateLimit(req, res, next) {
+  const ip = req.ip;
+  const now = Date.now();
+  const window = 15 * 60 * 1000;
+  const maxAttempts = 20;
+  const attempts = loginAttempts.get(ip) || [];
+  const recent = attempts.filter((t) => now - t < window);
+  if (recent.length >= maxAttempts) {
+    return res.status(429).json({ message: 'Demasiados intentos. Espera 15 minutos.' });
+  }
+  recent.push(now);
+  loginAttempts.set(ip, recent);
+  next();
+}
+
 async function forwardToWebhook(endpoint, body) {
   const res = await fetch(`${WEBHOOK_URL}/${endpoint}`, {
     method: 'POST',
@@ -19,7 +35,7 @@ async function forwardToWebhook(endpoint, body) {
   return res.json();
 }
 
-router.post('/login', async (req, res) => {
+router.post('/login', rateLimit, async (req, res) => {
   try {
     const result = await forwardToWebhook('kontia-login', req.body);
 
@@ -41,7 +57,7 @@ router.post('/login', async (req, res) => {
   }
 });
 
-router.post('/register', async (req, res) => {
+router.post('/register', rateLimit, async (req, res) => {
   try {
     const result = await forwardToWebhook('kontia-registro', {
       ...req.body,

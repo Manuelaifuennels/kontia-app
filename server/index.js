@@ -9,6 +9,13 @@ import authRoutes from './routes/auth.js';
 import dataRoutes from './routes/data.js';
 import webhookRoutes from './routes/webhooks.js';
 
+const REQUIRED_ENV = ['NOCO_URL', 'NOCO_TOKEN', 'JWT_SECRET', 'WEBHOOK_URL'];
+const missing = REQUIRED_ENV.filter((k) => !process.env[k]);
+if (missing.length) {
+  console.error(`Missing required env vars: ${missing.join(', ')}`);
+  process.exit(1);
+}
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -31,6 +38,10 @@ app.get('/api/status', (req, res) => {
     webhooks: (process.env.WEBHOOK_URL || '').replace('https://', ''),
     minio: (process.env.MINIO_URL || '').replace('https://', ''),
   });
+});
+
+app.use('/api', (_req, res) => {
+  res.status(404).json({ error: 'Endpoint no encontrado' });
 });
 
 if (isProd) {
