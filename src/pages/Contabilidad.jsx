@@ -9,6 +9,7 @@ import Button from "../components/ui/Button";
 import Icon from "../components/ui/Icon";
 import Modal from "../components/ui/Modal";
 import StatusBadge from "../components/ui/StatusBadge";
+import Field from "../components/ui/Field";
 import SubirDocs from "./SubirDocs";
 
 const TABS = [
@@ -72,6 +73,9 @@ export default function Contabilidad() {
   const [showUpload, setShowUpload] = useState(false);
   const [detailInvoice, setDetailInvoice] = useState(null);
   const [showColConfig, setShowColConfig] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editForm, setEditForm] = useState({});
+  const [editSaving, setEditSaving] = useState(false);
   const [visibleColumns, setVisibleColumns] = useState(() => {
     try {
       const saved = localStorage.getItem("kontia_cols");
@@ -128,6 +132,47 @@ export default function Contabilidad() {
     setSel({});
     toast(`${ids.length} facturas actualizadas`, "success");
     loadFacturas();
+  }
+
+  function startEdit(inv) {
+    setEditForm({
+      Id: inv.Id,
+      numero_factura: inv.numero_factura || "",
+      fecha_factura: (inv.fecha_factura || "").substring(0, 10),
+      nombre_emisor: inv.nombre_emisor || "",
+      nif_emisor: inv.nif_emisor || "",
+      base_iva_21: inv.base_iva_21 || "",
+      cuota_iva_21: inv.cuota_iva_21 || "",
+      total_factura: inv.total_factura || inv.total || "",
+      cuenta_gasto: inv.cuenta_gasto || "",
+      metodo_pago: inv.metodo_pago || "",
+      tipo_documento: inv.tipo_documento || "compra",
+      estado: inv.estado || "revision",
+    });
+    setEditing(true);
+  }
+
+  function editField(key, val) {
+    setEditForm((p) => ({ ...p, [key]: val }));
+  }
+
+  async function saveEdit() {
+    setEditSaving(true);
+    try {
+      await api.updateRecord("facturas", editForm);
+      toast("Factura actualizada", "success");
+      setEditing(false);
+      setDetailInvoice(null);
+      loadFacturas();
+    } catch (err) {
+      toast(err.message, "error");
+    }
+    setEditSaving(false);
+  }
+
+  function closeDetail() {
+    setDetailInvoice(null);
+    setEditing(false);
   }
 
   if (showUpload) {
@@ -258,47 +303,78 @@ export default function Contabilidad() {
 
       {/* Invoice Detail Modal */}
       {detailInvoice && (
-        <Modal open={!!detailInvoice} onClose={() => setDetailInvoice(null)} title={`Factura ${detailInvoice.numero_factura || detailInvoice.Id}`}>
+        <Modal open={!!detailInvoice} onClose={closeDetail} title={`Factura ${detailInvoice.numero_factura || detailInvoice.Id}`} width="max-w-2xl">
           {detailInvoice.archivo_url && (
-            <div className="mb-4 text-center">
-              {(detailInvoice.archivo_nombre || "").match(/\.(jpg|jpeg|png|gif)$/i) ? (
+            <div className="mb-4">
+              {(detailInvoice.archivo_nombre || detailInvoice.archivo_url || "").match(/\.(jpg|jpeg|png|gif)$/i) ? (
                 <img src={detailInvoice.archivo_url} alt="Factura" className="max-w-full max-h-72 rounded-lg border border-slate-200 mx-auto" />
               ) : (
-                <a href={detailInvoice.archivo_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 px-5 py-3 bg-teal-50 rounded-lg text-teal-600 font-semibold text-sm">
-                  <Icon name="eye" size={18} /> Ver documento ({detailInvoice.archivo_nombre || "PDF"})
-                </a>
+                <iframe
+                  src={detailInvoice.archivo_url}
+                  title="Factura PDF"
+                  className="w-full rounded-lg border border-slate-200"
+                  style={{ height: "400px" }}
+                />
               )}
             </div>
           )}
-          <div className="grid grid-cols-2 gap-3 text-sm">
-            {[
-              ["Estado", detailInvoice.estado],
-              ["Tipo", detailInvoice.tipo_documento],
-              ["Nº Factura", detailInvoice.numero_factura],
-              ["Fecha", fmtDate(detailInvoice.fecha_factura)],
-              ["Emisor", detailInvoice.nombre_emisor],
-              ["NIF", detailInvoice.nif_emisor],
-              ["Base imponible", fmt(detailInvoice.base_imponible) + " €"],
-              ["IVA", `${detailInvoice.tipo_iva || ""}% → ${fmt(detailInvoice.cuota_iva)} €`],
-              ["Total", fmt(detailInvoice.total_factura) + " €"],
-              ["Cuenta gasto", detailInvoice.cuenta_gasto],
-              ["Retención", detailInvoice.cuota_retencion ? fmt(detailInvoice.cuota_retencion) + " €" : "—"],
-              ["Método pago", detailInvoice.metodo_pago || "—"],
-              ["Confianza IA", detailInvoice.confianza_ia || "—"],
-              ["Fecha subida", fmtDate(detailInvoice.CreatedAt)],
-            ].map(([k, v], i) => (
-              <div key={i}>
-                <span className="text-xs text-slate-400 font-semibold">{k}</span>
-                <div className="font-medium text-slate-700">{v || "—"}</div>
+
+          {editing ? (
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Nº Factura" value={editForm.numero_factura} onChange={(v) => editField("numero_factura", v)} />
+              <Field label="Fecha factura" type="date" value={editForm.fecha_factura} onChange={(v) => editField("fecha_factura", v)} />
+              <Field label="Emisor" value={editForm.nombre_emisor} onChange={(v) => editField("nombre_emisor", v)} />
+              <Field label="NIF / CIF" value={editForm.nif_emisor} onChange={(v) => editField("nif_emisor", v)} />
+              <Field label="Base IVA 21%" value={editForm.base_iva_21} onChange={(v) => editField("base_iva_21", v)} />
+              <Field label="Cuota IVA 21%" value={editForm.cuota_iva_21} onChange={(v) => editField("cuota_iva_21", v)} />
+              <Field label="Total factura" value={editForm.total_factura} onChange={(v) => editField("total_factura", v)} />
+              <Field label="Cuenta gasto" value={editForm.cuenta_gasto} onChange={(v) => editField("cuenta_gasto", v)} />
+              <Field label="Método pago" value={editForm.metodo_pago} onChange={(v) => editField("metodo_pago", v)} />
+              <Field label="Tipo documento" value={editForm.tipo_documento} onChange={(v) => editField("tipo_documento", v)} options={[{ value: "compra", label: "Compra" }, { value: "venta", label: "Venta" }]} />
+              <Field label="Estado" value={editForm.estado} onChange={(v) => editField("estado", v)} options={[{ value: "revision", label: "Pendiente" }, { value: "procesando", label: "En proceso" }, { value: "error", label: "Error" }, { value: "completada", label: "Contabilizada" }]} />
+              <div className="col-span-2 flex gap-2 justify-end mt-2">
+                <Button variant="secondary" onClick={() => setEditing(false)}>Cancelar</Button>
+                <Button onClick={saveEdit} disabled={editSaving}>{editSaving ? "Guardando..." : "Guardar cambios"}</Button>
               </div>
-            ))}
-          </div>
-          {detailInvoice.archivo_url && (
-            <div className="mt-4 text-center">
-              <a href={detailInvoice.archivo_url} target="_blank" rel="noreferrer" download className="inline-flex items-center gap-1.5 px-4 py-2 bg-teal-600 text-white rounded-lg text-sm font-medium">
-                <Icon name="download" size={14} /> Descargar
-              </a>
             </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                {[
+                  ["Estado", detailInvoice.estado],
+                  ["Tipo", detailInvoice.tipo_documento],
+                  ["Nº Factura", detailInvoice.numero_factura],
+                  ["Fecha", fmtDate(detailInvoice.fecha_factura)],
+                  ["Emisor", detailInvoice.nombre_emisor],
+                  ["NIF", detailInvoice.nif_emisor],
+                  ["Base imponible", fmt(detailInvoice.base_imponible) + " €"],
+                  ["IVA", `${detailInvoice.tipo_iva || ""}% → ${fmt(detailInvoice.cuota_iva)} €`],
+                  ["Total", fmt(detailInvoice.total_factura) + " €"],
+                  ["Cuenta gasto", detailInvoice.cuenta_gasto],
+                  ["Retención", detailInvoice.cuota_retencion ? fmt(detailInvoice.cuota_retencion) + " €" : "—"],
+                  ["Método pago", detailInvoice.metodo_pago || "—"],
+                  ["Confianza IA", detailInvoice.confianza_ia || "—"],
+                  ["Fecha subida", fmtDate(detailInvoice.CreatedAt)],
+                ].map(([k, v], i) => (
+                  <div key={i}>
+                    <span className="text-xs text-slate-400 font-semibold">{k}</span>
+                    <div className="font-medium text-slate-700">{v || "—"}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-4 flex gap-2 justify-center">
+                {can(user, "edit") && (
+                  <Button variant="secondary" onClick={() => startEdit(detailInvoice)}>
+                    <Icon name="edit" size={14} /> Editar
+                  </Button>
+                )}
+                {detailInvoice.archivo_url && (
+                  <a href={detailInvoice.archivo_url} target="_blank" rel="noreferrer" download className="inline-flex items-center gap-1.5 px-4 py-2 bg-teal-600 text-white rounded-lg text-sm font-medium">
+                    <Icon name="download" size={14} /> Descargar
+                  </a>
+                )}
+              </div>
+            </>
           )}
         </Modal>
       )}

@@ -32,8 +32,14 @@ export default function Conciliacion() {
     setProcessing(true);
     setResult(null);
     try {
-      const csv_base64 = await readFileAsBase64(file);
-      const res = await api.webhook("conciliacion-bancaria", { csv_base64, empresa_id: user.empresa_id });
+      const file_base64 = await readFileAsBase64(file);
+      const res = await api.webhook("conciliacion-bancaria", {
+        csv_base64: file_base64,
+        file_base64,
+        nombre_archivo: file.name,
+        media_type: file.type,
+        empresa_id: user.empresa_id,
+      });
       setResult(res);
       toast(`Conciliación completada: ${res?.matches?.length || 0} coincidencias`, "success");
     } catch (err) {
@@ -51,7 +57,7 @@ export default function Conciliacion() {
 
       <div className="bg-white border border-slate-200 rounded-xl p-6 mb-6">
         <p className="text-sm text-slate-500 mb-4">
-          Sube un CSV con los movimientos de tu banco. Kontia comparará los importes con tus facturas y conciliará automáticamente.
+          Sube un archivo con los movimientos de tu banco (CSV, Excel o PDF). Kontia comparará los importes con tus facturas y conciliará automáticamente.
         </p>
 
         <div
@@ -59,11 +65,11 @@ export default function Conciliacion() {
           className="border-2 border-dashed border-teal-300 rounded-xl p-8 text-center cursor-pointer mb-4 bg-teal-50/30 hover:bg-teal-50/60 transition-colors"
         >
           <Icon name="upload" size={28} className="text-teal-600 mx-auto mb-2" />
-          <div className="text-sm text-slate-500">{file ? file.name : "Seleccionar CSV del banco"}</div>
+          <div className="text-sm text-slate-500">{file ? file.name : "Seleccionar archivo del banco (CSV, Excel, PDF)"}</div>
           <input
             ref={fileRef}
             type="file"
-            accept=".csv"
+            accept=".csv,.xls,.xlsx,.pdf"
             className="hidden"
             onChange={(e) => setFile(e.target.files[0] || null)}
           />

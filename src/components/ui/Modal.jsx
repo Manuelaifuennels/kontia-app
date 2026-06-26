@@ -32,7 +32,7 @@ export default function Modal({
         </div>
 
         {/* Body */}
-        <div className="px-5 py-4">{children}</div>
+        <div className="px-5 py-4 max-h-[75vh] overflow-y-auto">{children}</div>
       </div>
     </div>
   );

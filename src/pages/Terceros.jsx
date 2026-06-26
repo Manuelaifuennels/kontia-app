@@ -22,7 +22,7 @@ export default function Terceros({ tipo = "proveedores" }) {
     setLoading(true);
     try {
       const [recs, facs] = await Promise.all([
-        api.listRecords(tipo),
+        api.listRecords(tipo, { limit: 200 }),
         api.listRecords("facturas", { limit: 1000 }),
       ]);
       setRecords(recs?.list || (Array.isArray(recs) ? recs : []));
