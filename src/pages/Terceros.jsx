@@ -59,7 +59,7 @@ export default function Terceros({ tipo = "proveedores" }) {
     try {
       const rec = isProv
         ? { nombre_proveedor: form.nombre, nif_proveedor: form.nif, cuenta_gasto: form.cuenta, cuenta_proveedor: form.cuentaTercero }
-        : { nombre: form.nombre, cif: form.nif, cuenta_ingresos: form.cuenta, cuenta_cliente: form.cuentaTercero };
+        : { nombre: form.nombre, nif: form.nif, cuenta_ingresos: form.cuenta, cuenta_cliente: form.cuentaTercero };
       await api.createRecord(tipo, rec);
       toast(`${isProv ? "Proveedor" : "Cliente"} creado`, "success");
       setShowAdd(false);

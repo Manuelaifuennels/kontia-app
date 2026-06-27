@@ -144,6 +144,13 @@ export default function Contabilidad() {
       nif_emisor: inv.nif_emisor || "",
       base_iva_21: inv.base_iva_21 || "",
       cuota_iva_21: inv.cuota_iva_21 || "",
+      base_iva_10: inv.base_iva_10 || "",
+      cuota_iva_10: inv.cuota_iva_10 || "",
+      base_iva_4: inv.base_iva_4 || "",
+      cuota_iva_4: inv.cuota_iva_4 || "",
+      base_iva_0: inv.base_iva_0 || "",
+      cuota_retencion: inv.cuota_retencion || inv.retencion || "",
+      pct_retencion: inv.pct_retencion || "",
       total_factura: inv.total_factura || inv.total || "",
       cuenta_gasto: inv.cuenta_gasto || "",
       metodo_pago: inv.metodo_pago || "",
@@ -326,8 +333,22 @@ export default function Contabilidad() {
               <Field label="Fecha factura" type="date" value={editForm.fecha_factura} onChange={(v) => editField("fecha_factura", v)} />
               <Field label="Emisor" value={editForm.nombre_emisor} onChange={(v) => editField("nombre_emisor", v)} />
               <Field label="NIF / CIF" value={editForm.nif_emisor} onChange={(v) => editField("nif_emisor", v)} />
+              <div className="col-span-2 border-t border-slate-200 pt-2 mt-1">
+                <p className="text-xs font-semibold text-slate-500 mb-2">Desglose IVA</p>
+              </div>
               <Field label="Base IVA 21%" value={editForm.base_iva_21} onChange={(v) => editField("base_iva_21", v)} />
               <Field label="Cuota IVA 21%" value={editForm.cuota_iva_21} onChange={(v) => editField("cuota_iva_21", v)} />
+              <Field label="Base IVA 10%" value={editForm.base_iva_10} onChange={(v) => editField("base_iva_10", v)} />
+              <Field label="Cuota IVA 10%" value={editForm.cuota_iva_10} onChange={(v) => editField("cuota_iva_10", v)} />
+              <Field label="Base IVA 4%" value={editForm.base_iva_4} onChange={(v) => editField("base_iva_4", v)} />
+              <Field label="Cuota IVA 4%" value={editForm.cuota_iva_4} onChange={(v) => editField("cuota_iva_4", v)} />
+              <Field label="Base exenta (0%)" value={editForm.base_iva_0} onChange={(v) => editField("base_iva_0", v)} />
+              <div />
+              <div className="col-span-2 border-t border-slate-200 pt-2 mt-1">
+                <p className="text-xs font-semibold text-slate-500 mb-2">Retención y totales</p>
+              </div>
+              <Field label="% Retención IRPF" value={editForm.pct_retencion} onChange={(v) => editField("pct_retencion", v)} />
+              <Field label="Cuota retención" value={editForm.cuota_retencion} onChange={(v) => editField("cuota_retencion", v)} />
               <Field label="Total factura" value={editForm.total_factura} onChange={(v) => editField("total_factura", v)} />
               <CuentaContableSelector label="Cuenta gasto (PGC)" value={editForm.cuenta_gasto} onChange={(v) => editField("cuenta_gasto", v)} filterGrupos={[6]} />
               <Field label="Método pago" value={editForm.metodo_pago} onChange={(v) => editField("metodo_pago", v)} />

@@ -48,8 +48,10 @@ export default function ResumenFiscal() {
     for (const f of active) {
       const q = getQuarter(f.fecha_factura);
       if (q === null) continue;
-      qs[q].base += sumFields(f, BASE_KEYS);
-      qs[q].iva += sumFields(f, CUOTA_KEYS);
+      const baseDesglose = sumFields(f, BASE_KEYS);
+      const ivaDesglose = sumFields(f, CUOTA_KEYS);
+      qs[q].base += baseDesglose || (Number(f.base_imponible) || Number(f.base_iva_0) || 0);
+      qs[q].iva += ivaDesglose || (Number(f.cuota_iva) || 0);
       qs[q].retencion += parseFloat(f.retencion || f.cuota_retencion) || 0;
     }
     return qs;
