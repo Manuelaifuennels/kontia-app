@@ -1,8 +1,9 @@
 import { Router } from 'express';
+import bcrypt from 'bcryptjs';
+import pool from '../db.js';
 import { authMiddleware, signToken } from '../middleware/auth.js';
 
 const router = Router();
-const WEBHOOK_URL = process.env.WEBHOOK_URL;
 
 const loginAttempts = new Map();
 function rateLimit(req, res, next) {
@@ -20,65 +21,112 @@ function rateLimit(req, res, next) {
   next();
 }
 
-async function forwardToWebhook(endpoint, body) {
-  const res = await fetch(`${WEBHOOK_URL}/${endpoint}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    const err = new Error(text);
-    err.status = res.status;
-    throw err;
-  }
-  return res.json();
-}
-
 router.post('/login', rateLimit, async (req, res) => {
   try {
-    const result = await forwardToWebhook('kontia-login', req.body);
-
-    if (!result?.success) {
-      return res.status(401).json({ message: result?.message || 'Credenciales incorrectas' });
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ message: 'Email y contraseña requeridos' });
     }
 
-    const user = result.user || {
-      email: req.body.email,
-      empresa_id: result.empresa_id,
-      empresa_nombre: result.empresa_nombre,
-      nombre: result.nombre,
-      rol: result.rol || "admin",
+    const result = await pool.query(
+      `SELECT u.id, u.email, u.nombre, u.password, u.rol, u.activo,
+              u.empresa_id, e.nombre AS empresa_nombre
+       FROM usuarios u
+       JOIN empresas e ON e.id = u.empresa_id
+       WHERE u.email = $1`,
+      [email.toLowerCase().trim()]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(401).json({ message: 'Credenciales incorrectas' });
+    }
+
+    const user = result.rows[0];
+
+    if (!user.activo) {
+      return res.status(401).json({ message: 'Cuenta desactivada' });
+    }
+
+    const valid = await bcrypt.compare(password, user.password);
+    if (!valid) {
+      return res.status(401).json({ message: 'Credenciales incorrectas' });
+    }
+
+    await pool.query('UPDATE usuarios SET ultimo_login = NOW() WHERE id = $1', [user.id]);
+
+    const payload = {
+      id: user.id,
+      email: user.email,
+      nombre: user.nombre,
+      empresa_id: user.empresa_id,
+      empresa_nombre: user.empresa_nombre,
+      rol: user.rol,
     };
-    const token = signToken(user);
-    res.json({ token, user });
+
+    const token = signToken(payload);
+    res.json({ token, user: payload });
   } catch (err) {
-    res.status(err.status || 500).json({ message: 'Error en login' });
+    res.status(500).json({ message: 'Error en login' });
   }
 });
 
 router.post('/register', rateLimit, async (req, res) => {
   try {
-    const result = await forwardToWebhook('kontia-registro', {
-      ...req.body,
-      empresa_id: Date.now(),
-    });
-
-    if (!result?.success) {
-      return res.status(400).json({ message: result?.message || 'Error en registro' });
+    const { email, password, nombre, empresa_nombre } = req.body;
+    if (!email || !password || !nombre || !empresa_nombre) {
+      return res.status(400).json({ message: 'Todos los campos son obligatorios' });
     }
 
-    const user = result.user || {
-      email: req.body.email,
-      empresa_id: result.empresa_id,
-      empresa_nombre: req.body.empresa_nombre,
-      nombre: req.body.nombre,
-      rol: "admin",
-    };
-    const token = signToken(user);
-    res.json({ token, user });
+    const exists = await pool.query(
+      'SELECT id FROM usuarios WHERE email = $1',
+      [email.toLowerCase().trim()]
+    );
+    if (exists.rows.length > 0) {
+      return res.status(400).json({ message: 'Este email ya está registrado' });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const empresa = await client.query(
+        'INSERT INTO empresas (nombre) VALUES ($1) RETURNING id',
+        [empresa_nombre]
+      );
+      const empresaId = empresa.rows[0].id;
+
+      const hash = await bcrypt.hash(password, 10);
+
+      const usuario = await client.query(
+        `INSERT INTO usuarios (empresa_id, nombre, email, password, rol, activo)
+         VALUES ($1, $2, $3, $4, 'admin', true) RETURNING id`,
+        [empresaId, nombre, email.toLowerCase().trim(), hash]
+      );
+
+      await client.query('COMMIT');
+
+      const payload = {
+        id: usuario.rows[0].id,
+        email: email.toLowerCase().trim(),
+        nombre,
+        empresa_id: empresaId,
+        empresa_nombre,
+        rol: 'admin',
+      };
+
+      const token = signToken(payload);
+      res.json({ token, user: payload });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   } catch (err) {
-    res.status(err.status || 500).json({ message: 'Error en registro' });
+    if (err.code === '23505') {
+      return res.status(400).json({ message: 'Este email ya está registrado' });
+    }
+    res.status(500).json({ message: 'Error en registro' });
   }
 });
 

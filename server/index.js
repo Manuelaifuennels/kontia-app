@@ -5,11 +5,12 @@ import cookieParser from 'cookie-parser';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
+import pool from './db.js';
 import authRoutes from './routes/auth.js';
 import dataRoutes from './routes/data.js';
 import webhookRoutes from './routes/webhooks.js';
 
-const REQUIRED_ENV = ['NOCO_URL', 'NOCO_TOKEN', 'JWT_SECRET', 'WEBHOOK_URL'];
+const REQUIRED_ENV = ['DATABASE_URL', 'JWT_SECRET', 'WEBHOOK_URL'];
 const missing = REQUIRED_ENV.filter((k) => !process.env[k]);
 if (missing.length) {
   console.error(`Missing required env vars: ${missing.join(', ')}`);
@@ -32,12 +33,18 @@ app.use('/api/auth', authRoutes);
 app.use('/api/data', dataRoutes);
 app.use('/api/webhook', webhookRoutes);
 
-app.get('/api/status', (req, res) => {
-  res.json({
-    noco: (process.env.NOCO_URL || '').replace('https://', ''),
-    webhooks: (process.env.WEBHOOK_URL || '').replace('https://', ''),
-    minio: (process.env.MINIO_URL || '').replace('https://', ''),
-  });
+app.get('/api/status', async (req, res) => {
+  try {
+    const dbResult = await pool.query('SELECT NOW() AS now');
+    res.json({
+      db: 'connected',
+      db_time: dbResult.rows[0].now,
+      webhooks: (process.env.WEBHOOK_URL || '').replace('https://', ''),
+      minio: (process.env.MINIO_URL || '').replace('https://', ''),
+    });
+  } catch (err) {
+    res.json({ db: 'error', db_error: err.message });
+  }
 });
 
 app.use('/api', (_req, res) => {
@@ -52,6 +59,12 @@ if (isProd) {
   });
 }
 
-app.listen(PORT, () => {
-  console.log(`Kontia server running on port ${PORT}`);
+pool.query('SELECT 1').then(() => {
+  console.log('PostgreSQL connected');
+  app.listen(PORT, () => {
+    console.log(`Kontia server running on port ${PORT}`);
+  });
+}).catch((err) => {
+  console.error('PostgreSQL connection failed:', err.message);
+  process.exit(1);
 });
