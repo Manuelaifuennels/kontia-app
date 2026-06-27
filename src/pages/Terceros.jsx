@@ -6,6 +6,7 @@ import Button from "../components/ui/Button";
 import Icon from "../components/ui/Icon";
 import Modal from "../components/ui/Modal";
 import Field from "../components/ui/Field";
+import CuentaContableSelector from "../components/ui/CuentaContableSelector";
 
 export default function Terceros({ tipo = "proveedores" }) {
   const toast = useToast();
@@ -15,7 +16,7 @@ export default function Terceros({ tipo = "proveedores" }) {
   const [facturas, setFacturas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
-  const [form, setForm] = useState({ nombre: "", nif: "", cuenta: "" });
+  const [form, setForm] = useState({ nombre: "", nif: "", cuenta: "", cuentaTercero: "" });
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
@@ -57,12 +58,12 @@ export default function Terceros({ tipo = "proveedores" }) {
     setSaving(true);
     try {
       const rec = isProv
-        ? { nombre_proveedor: form.nombre, nif_proveedor: form.nif, cuenta_gasto: form.cuenta }
-        : { nombre: form.nombre, cif: form.nif, cuenta_ingresos: form.cuenta };
+        ? { nombre_proveedor: form.nombre, nif_proveedor: form.nif, cuenta_gasto: form.cuenta, cuenta_proveedor: form.cuentaTercero }
+        : { nombre: form.nombre, cif: form.nif, cuenta_ingresos: form.cuenta, cuenta_cliente: form.cuentaTercero };
       await api.createRecord(tipo, rec);
       toast(`${isProv ? "Proveedor" : "Cliente"} creado`, "success");
       setShowAdd(false);
-      setForm({ nombre: "", nif: "", cuenta: "" });
+      setForm({ nombre: "", nif: "", cuenta: "", cuentaTercero: "" });
       load();
     } catch (err) {
       toast(err.message, "error");
@@ -76,7 +77,7 @@ export default function Terceros({ tipo = "proveedores" }) {
     <div className="p-6">
       <div className="flex items-center justify-between mb-5">
         <h2 className="text-xl font-bold text-slate-800">{title}</h2>
-        <Button onClick={() => { setForm({ nombre: "", nif: "", cuenta: "" }); setShowAdd(true); }}>
+        <Button onClick={() => { setForm({ nombre: "", nif: "", cuenta: "", cuentaTercero: "" }); setShowAdd(true); }}>
           <Icon name="plus" size={14} /> Nuevo
         </Button>
       </div>
@@ -115,10 +116,21 @@ export default function Terceros({ tipo = "proveedores" }) {
         </table>
       </div>
 
-      <Modal open={showAdd} onClose={() => setShowAdd(false)} title={isProv ? "Nuevo proveedor" : "Nuevo cliente"}>
+      <Modal open={showAdd} onClose={() => setShowAdd(false)} title={isProv ? "Nuevo proveedor" : "Nuevo cliente"} width="max-w-lg">
         <Field label={isProv ? "Nombre proveedor" : "Nombre cliente"} value={form.nombre} onChange={(v) => setForm((p) => ({ ...p, nombre: v }))} />
         <Field label="CIF / NIF" value={form.nif} onChange={(v) => setForm((p) => ({ ...p, nif: v }))} />
-        <Field label={isProv ? "Cuenta gastos" : "Cuenta ingresos"} value={form.cuenta} onChange={(v) => setForm((p) => ({ ...p, cuenta: v }))} />
+        <CuentaContableSelector
+          label={isProv ? "Cuenta de gastos (PGC)" : "Cuenta de ingresos (PGC)"}
+          value={form.cuenta}
+          onChange={(v) => setForm((p) => ({ ...p, cuenta: v }))}
+          filterGrupos={isProv ? [6] : [7]}
+        />
+        <CuentaContableSelector
+          label={isProv ? "Cuenta de proveedor (PGC)" : "Cuenta de cliente (PGC)"}
+          value={form.cuentaTercero}
+          onChange={(v) => setForm((p) => ({ ...p, cuentaTercero: v }))}
+          filterGrupos={[4]}
+        />
         <div className="flex gap-2 justify-end mt-2">
           <Button variant="secondary" onClick={() => setShowAdd(false)}>Cancelar</Button>
           <Button onClick={saveItem} disabled={saving}>{saving ? "Guardando..." : "Crear"}</Button>

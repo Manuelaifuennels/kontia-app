@@ -10,6 +10,7 @@ import Icon from "../components/ui/Icon";
 import Modal from "../components/ui/Modal";
 import StatusBadge from "../components/ui/StatusBadge";
 import Field from "../components/ui/Field";
+import CuentaContableSelector from "../components/ui/CuentaContableSelector";
 import SubirDocs from "./SubirDocs";
 
 const TABS = [
@@ -328,7 +329,7 @@ export default function Contabilidad() {
               <Field label="Base IVA 21%" value={editForm.base_iva_21} onChange={(v) => editField("base_iva_21", v)} />
               <Field label="Cuota IVA 21%" value={editForm.cuota_iva_21} onChange={(v) => editField("cuota_iva_21", v)} />
               <Field label="Total factura" value={editForm.total_factura} onChange={(v) => editField("total_factura", v)} />
-              <Field label="Cuenta gasto" value={editForm.cuenta_gasto} onChange={(v) => editField("cuenta_gasto", v)} />
+              <CuentaContableSelector label="Cuenta gasto (PGC)" value={editForm.cuenta_gasto} onChange={(v) => editField("cuenta_gasto", v)} filterGrupos={[6]} />
               <Field label="Método pago" value={editForm.metodo_pago} onChange={(v) => editField("metodo_pago", v)} />
               <Field label="Tipo documento" value={editForm.tipo_documento} onChange={(v) => editField("tipo_documento", v)} options={[{ value: "compra", label: "Compra" }, { value: "venta", label: "Venta" }]} />
               <Field label="Estado" value={editForm.estado} onChange={(v) => editField("estado", v)} options={[{ value: "revision", label: "Pendiente" }, { value: "procesando", label: "En proceso" }, { value: "error", label: "Error" }, { value: "completada", label: "Contabilizada" }]} />
