@@ -10,6 +10,7 @@ const DUMMY_HASH = bcrypt.hashSync('kontia-dummy-never-matches-x7k9', 12);
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const NIF_CIF_RE = /^[A-Z]\d{7}[A-Z0-9]$|^\d{8}[A-Z]$|^[XYZ]\d{7}[A-Z]$/;
 
+// Mono-instancia: rate limiters en memoria son válidos solo con un proceso Node. Si se escala horizontalmente, migrar a Redis o pg_advisory_lock.
 const RATE_WINDOW = 15 * 60 * 1000;
 const loginRateMap = new Map();
 const registerRateMap = new Map();

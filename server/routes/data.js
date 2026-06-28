@@ -23,18 +23,25 @@ const TABLE_SELECT_COLS = {
   usuarios: USUARIOS_SAFE_COLS,
 };
 
+const IVA_BRACKETS = [
+  { base: 'base_iva_21', cuota: 'cuota_iva_21', rate: 0.21 },
+  { base: 'base_iva_12', cuota: 'cuota_iva_12', rate: 0.12 },
+  { base: 'base_iva_10_5', cuota: 'cuota_iva_10_5', rate: 0.105 },
+  { base: 'base_iva_10', cuota: 'cuota_iva_10', rate: 0.10 },
+  { base: 'base_iva_5', cuota: 'cuota_iva_5', rate: 0.05 },
+  { base: 'base_iva_4', cuota: 'cuota_iva_4', rate: 0.04 },
+  { base: 'base_iva_0', cuota: 'cuota_iva_0', rate: 0 },
+  { base: 'base_iva_0_no_ex', cuota: 'cuota_iva_0_no_ex', rate: 0 },
+  { base: 'base_iva_0_no_sujeto', cuota: 'cuota_iva_0_no_sujeto', rate: 0 },
+];
+
 const EDITABLE_COLS = {
   facturas: new Set([
     'nombre_emisor', 'nif_emisor', 'nombre_receptor', 'nif_receptor',
     'fecha_factura', 'numero_factura',
     'base_imponible', 'tipo_iva', 'tipo_retencion', 'pct_retencion',
     'base_req', 'pct_req',
-    'base_iva_21', 'cuota_iva_21', 'base_iva_12', 'cuota_iva_12',
-    'base_iva_10_5', 'cuota_iva_10_5', 'base_iva_10', 'cuota_iva_10',
-    'base_iva_5', 'cuota_iva_5', 'base_iva_4', 'cuota_iva_4',
-    'base_iva_0', 'cuota_iva_0',
-    'base_iva_0_no_ex', 'cuota_iva_0_no_ex',
-    'base_iva_0_no_sujeto', 'cuota_iva_0_no_sujeto',
+    ...IVA_BRACKETS.map(b => b.base),
     'tipo_documento', 'archivo_url', 'archivo_nombre',
     'proveedor_id', 'cliente_id',
     'metodo_pago', 'cuenta_gasto', 'cuenta_tercero',
@@ -57,7 +64,10 @@ const SYSTEM_COLS = new Set(['id', 'empresa_id', 'created_at', 'updated_at']);
 const NIF_CIF_RE = /^[A-Z]\d{7}[A-Z0-9]$|^\d{8}[A-Z]$|^[XYZ]\d{7}[A-Z]$/;
 
 const COMPUTED_COLS = {
-  facturas: new Set(['cuota_iva', 'total_factura', 'cuota_req', 'cuota_retencion']),
+  facturas: new Set([
+    'cuota_iva', 'total_factura', 'cuota_req', 'cuota_retencion',
+    ...IVA_BRACKETS.map(b => b.cuota),
+  ]),
 };
 
 const PERIOD_TABLES = new Set(['asientos', 'movimientos']);
@@ -98,23 +108,48 @@ function editableKeys(body, table, computedApplied = false) {
 }
 
 function recalcFactura(data) {
-  const base = parseFloat(data.base_imponible);
-  const tipoIva = parseFloat(data.tipo_iva);
-  if (!Number.isFinite(base) || !Number.isFinite(tipoIva)) return;
-  if (base < 0 || base > MAX_BASE)
-    throw Object.assign(new Error('base_imponible fuera de rango (0 a 1.000.000.000)'), { status: 400 });
-  if (!VALID_IVA.has(tipoIva))
-    throw Object.assign(new Error('tipo_iva no válido (permitidos: 0, 4, 5, 10, 10.5, 12, 21)'), { status: 400 });
+  const hasMultiIva = IVA_BRACKETS.some(b => {
+    const v = parseFloat(data[b.base]);
+    return Number.isFinite(v) && v !== 0;
+  });
+
+  let totalBase = 0;
+  let totalCuota = 0;
+
+  if (hasMultiIva) {
+    for (const bracket of IVA_BRACKETS) {
+      const base = parseFloat(data[bracket.base]) || 0;
+      if (base < 0 || base > MAX_BASE)
+        throw Object.assign(new Error(`${bracket.base} fuera de rango (0 a ${MAX_BASE})`), { status: 400 });
+      const cuota = Math.round(base * bracket.rate * 100) / 100;
+      data[bracket.cuota] = cuota;
+      totalBase += base;
+      totalCuota += cuota;
+    }
+    data.base_imponible = Math.round(totalBase * 100) / 100;
+    data.cuota_iva = Math.round(totalCuota * 100) / 100;
+  } else {
+    const base = parseFloat(data.base_imponible);
+    const tipoIva = parseFloat(data.tipo_iva);
+    if (!Number.isFinite(base) || !Number.isFinite(tipoIva)) return;
+    if (base < 0 || base > MAX_BASE)
+      throw Object.assign(new Error('base_imponible fuera de rango (0 a 1.000.000.000)'), { status: 400 });
+    if (!VALID_IVA.has(tipoIva))
+      throw Object.assign(new Error('tipo_iva no válido (permitidos: 0, 4, 5, 10, 10.5, 12, 21)'), { status: 400 });
+    data.cuota_iva = Math.round(base * tipoIva) / 100;
+    totalBase = base;
+    totalCuota = data.cuota_iva;
+  }
+
   const pctReq = parseFloat(data.pct_req) || 0;
   if (pctReq < 0 || pctReq > MAX_REQ)
     throw Object.assign(new Error('pct_req fuera de rango (0 a 10)'), { status: 400 });
   const pctRet = parseFloat(data.pct_retencion) || 0;
   if (pctRet < 0 || pctRet > MAX_RETENCION)
     throw Object.assign(new Error('pct_retencion fuera de rango (0 a 60)'), { status: 400 });
-  data.cuota_iva = Math.round(base * tipoIva) / 100;
-  data.cuota_req = Math.round(base * pctReq) / 100;
-  data.cuota_retencion = Math.round(base * pctRet) / 100;
-  data.total_factura = Math.round((base + data.cuota_iva - data.cuota_retencion + data.cuota_req) * 100) / 100;
+  data.cuota_req = Math.round(totalBase * pctReq) / 100;
+  data.cuota_retencion = Math.round(totalBase * pctRet) / 100;
+  data.total_factura = Math.round((totalBase + totalCuota - data.cuota_retencion + data.cuota_req) * 100) / 100;
 }
 
 function mapRow(row) {
@@ -142,6 +177,16 @@ async function ejercicioBloqueado(empresaId, fecha) {
   return ej.bloqueado || ej.estado === 'cerrado';
 }
 
+async function verificarApunteOwnership(apunteId, empresaId) {
+  const r = await pool.query(
+    `SELECT a.id, s.fecha FROM apuntes a
+     JOIN asientos s ON s.id = a.asiento_id
+     WHERE a.id = $1 AND s.empresa_id = $2`,
+    [apunteId, empresaId]
+  );
+  return r.rows[0] || null;
+}
+
 router.post('/facturas/:id/contabilizar', async (req, res) => {
   try {
     const liveUser = await validateUser(req.user.id, req.user.empresa_id, { live: true });
@@ -155,7 +200,7 @@ router.post('/facturas/:id/contabilizar', async (req, res) => {
     const facturaId = parseInt(req.params.id, 10);
 
     const fcheck = await pool.query(
-      'SELECT id, estado, base_imponible, tipo_iva, pct_req, pct_retencion, fecha_factura FROM facturas WHERE id = $1 AND empresa_id = $2',
+      'SELECT * FROM facturas WHERE id = $1 AND empresa_id = $2',
       [facturaId, req.user.empresa_id]
     );
     if (fcheck.rows.length === 0) {
@@ -173,17 +218,36 @@ router.post('/facturas/:id/contabilizar', async (req, res) => {
 
     const base = parseFloat(row.base_imponible);
     const tipoIva = parseFloat(row.tipo_iva);
-    if (!Number.isFinite(base) || !Number.isFinite(tipoIva)) {
+    const hasAnyBase = IVA_BRACKETS.some(b => parseFloat(row[b.base]) > 0);
+    if (!hasAnyBase && (!Number.isFinite(base) || !Number.isFinite(tipoIva))) {
       return res.status(400).json({ error: 'Factura incompleta: falta base_imponible o tipo_iva' });
     }
 
     recalcFactura(row);
 
+    const setCols = [`estado = 'contabilizada'`];
+    const setVals = [];
+    let p = 1;
+
+    for (const col of COMPUTED_COLS.facturas) {
+      if (row[col] !== undefined) {
+        setCols.push(`"${col}" = $${p++}`);
+        setVals.push(row[col]);
+      }
+    }
+    setCols.push(`"base_imponible" = $${p++}`);
+    setVals.push(row.base_imponible);
+    setCols.push(`contabilizada_por = $${p++}`);
+    setVals.push(req.user.id);
+    setCols.push(`contabilizada_at = NOW()`);
+    setCols.push(`fecha_contabilizacion = NOW()::date`);
+
+    setVals.push(facturaId, req.user.empresa_id);
+
     const result = await pool.query(
-      `UPDATE facturas SET estado = 'contabilizada', cuota_iva = $1, cuota_req = $2, cuota_retencion = $3, total_factura = $4,
-       contabilizada_por = $5, contabilizada_at = NOW(), fecha_contabilizacion = NOW()::date
-       WHERE id = $6 AND empresa_id = $7 AND estado != 'contabilizada' RETURNING *`,
-      [row.cuota_iva, row.cuota_req, row.cuota_retencion, row.total_factura, req.user.id, facturaId, req.user.empresa_id]
+      `UPDATE facturas SET ${setCols.join(', ')}
+       WHERE id = $${p} AND empresa_id = $${p + 1} AND estado != 'contabilizada' RETURNING *`,
+      setVals
     );
 
     if (result.rowCount === 0) {
@@ -249,6 +313,19 @@ router.post('/:table', async (req, res) => {
     delete body.created_at; delete body.updated_at;
     delete body.empresa_id;
 
+    if (table === 'apuntes' && body.asiento_id) {
+      const asientoCheck = await pool.query(
+        'SELECT id, fecha FROM asientos WHERE id = $1 AND empresa_id = $2',
+        [body.asiento_id, req.user.empresa_id]
+      );
+      if (asientoCheck.rows.length === 0) {
+        return res.status(403).json({ error: 'Asiento no encontrado o sin acceso' });
+      }
+      if (await ejercicioBloqueado(req.user.empresa_id, asientoCheck.rows[0].fecha)) {
+        return res.status(409).json({ error: 'Ejercicio bloqueado: no se puede añadir apunte' });
+      }
+    }
+
     const dateCol = table === 'facturas' ? 'fecha_factura' : 'fecha';
     if (FISCAL_DATE_TABLES.has(table) && body[dateCol]) {
       if (await ejercicioBloqueado(req.user.empresa_id, body[dateCol])) {
@@ -306,7 +383,7 @@ router.patch('/:table', async (req, res) => {
     let fcurrent = null;
     if (table === 'facturas') {
       const fcheck = await pool.query(
-        'SELECT id, estado, base_imponible, tipo_iva, pct_req, pct_retencion, fecha_factura FROM facturas WHERE id = $1 AND empresa_id = $2',
+        'SELECT * FROM facturas WHERE id = $1 AND empresa_id = $2',
         [recordId, req.user.empresa_id]
       );
       if (fcheck.rows.length === 0) {
@@ -319,6 +396,14 @@ router.patch('/:table', async (req, res) => {
         return res.status(409).json({ error: 'Ejercicio bloqueado: factura inmutable' });
       }
       fcurrent = fcheck.rows[0];
+    } else if (table === 'apuntes') {
+      const apunte = await verificarApunteOwnership(recordId, req.user.empresa_id);
+      if (!apunte) {
+        return res.status(403).json({ error: 'Sin acceso a este registro' });
+      }
+      if (await ejercicioBloqueado(req.user.empresa_id, apunte.fecha)) {
+        return res.status(409).json({ error: 'Ejercicio bloqueado: apunte inmutable' });
+      }
     } else {
       const check = await pool.query(
         `SELECT id FROM "${table}" WHERE id = $1 AND empresa_id = $2`,
@@ -385,6 +470,7 @@ router.patch('/:table', async (req, res) => {
       for (const col of COMPUTED_COLS.facturas) {
         if (merged[col] !== undefined) body[col] = merged[col];
       }
+      body.base_imponible = merged.base_imponible;
       computedApplied = true;
     }
     const keys = editableKeys(body, table, computedApplied);
@@ -396,21 +482,29 @@ router.patch('/:table', async (req, res) => {
 
     const returning = table === 'usuarios' ? USUARIOS_SAFE_COLS : '*';
     const query = `UPDATE "${table}" SET ${setClause} WHERE id = $${keys.length + 1} AND empresa_id = $${keys.length + 2} RETURNING ${returning}`;
-    const result = await pool.query(query, values);
 
-    if (table === 'config' && body.cif_empresa) {
+    const cifSync = table === 'config' && body.cif_empresa;
+    let result;
+
+    if (cifSync) {
       const cif = body.cif_empresa.trim().toUpperCase();
+      const client = await pool.connect();
       try {
-        await pool.query(
-          'UPDATE empresas SET nif = $1 WHERE id = $2',
-          [cif, req.user.empresa_id]
-        );
+        await client.query('BEGIN');
+        result = await client.query(query, values);
+        await client.query('UPDATE empresas SET nif = $1 WHERE id = $2', [cif, req.user.empresa_id]);
+        await client.query('COMMIT');
       } catch (err) {
+        await client.query('ROLLBACK');
         if (err.code === '23505') {
           return res.status(409).json({ error: 'Ya existe otra empresa con este NIF/CIF' });
         }
-        console.error('Error syncing empresa NIF:', err.message);
+        throw err;
+      } finally {
+        client.release();
       }
+    } else {
+      result = await pool.query(query, values);
     }
 
     res.json(mapRow(result.rows[0]));
@@ -454,6 +548,16 @@ router.delete('/:table/:id', async (req, res) => {
       }
       if (fcheck.rows[0]?.fecha_factura && await ejercicioBloqueado(req.user.empresa_id, fcheck.rows[0].fecha_factura)) {
         return res.status(409).json({ error: 'Ejercicio bloqueado: factura inmutable' });
+      }
+    }
+
+    if (table === 'apuntes') {
+      const apunte = await verificarApunteOwnership(deleteId, req.user.empresa_id);
+      if (!apunte) {
+        return res.status(403).json({ error: 'Sin acceso a este registro' });
+      }
+      if (await ejercicioBloqueado(req.user.empresa_id, apunte.fecha)) {
+        return res.status(409).json({ error: 'Ejercicio bloqueado: apunte inmutable' });
       }
     }
 
