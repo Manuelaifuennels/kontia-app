@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import pool from '../db.js';
-import { authMiddleware, validateUserLive } from '../middleware/auth.js';
+import { authMiddleware, validateUser } from '../middleware/auth.js';
 
 const router = Router();
 router.use(authMiddleware);
@@ -64,9 +64,9 @@ router.get('/:table', async (req, res) => {
       return res.status(400).json({ error: `Tabla desconocida: ${table}` });
     }
 
-    const { sort } = req.query;
-    const limit = Math.min(Math.max(parseInt(req.query.limit) || 200, 1), 500);
-    const offset = Math.max(parseInt(req.query.offset) || 0, 0);
+    const sort = Array.isArray(req.query.sort) ? req.query.sort[0] : req.query.sort;
+    const limit = Math.min(Math.max(parseInt(Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit) || 200, 1), 500);
+    const offset = Math.max(parseInt(Array.isArray(req.query.offset) ? req.query.offset[0] : req.query.offset) || 0, 0);
 
     let orderBy = 'id DESC';
     if (sort) {
@@ -99,7 +99,8 @@ router.post('/:table', async (req, res) => {
     if (READONLY_TABLES.has(table)) {
       return res.status(403).json({ error: 'Tabla de solo lectura' });
     }
-    if (!CAN_WRITE.has(req.user.rol)) {
+    const liveWrite = await validateUser(req.user.id, req.user.empresa_id, { live: true });
+    if (!CAN_WRITE.has(liveWrite.rol)) {
       return res.status(403).json({ error: 'Permiso insuficiente' });
     }
 
@@ -130,7 +131,8 @@ router.patch('/:table', async (req, res) => {
     if (READONLY_TABLES.has(table)) {
       return res.status(403).json({ error: 'Tabla de solo lectura' });
     }
-    if (!CAN_WRITE.has(req.user.rol)) {
+    const liveWrite = await validateUser(req.user.id, req.user.empresa_id, { live: true });
+    if (!CAN_WRITE.has(liveWrite.rol)) {
       return res.status(403).json({ error: 'Permiso insuficiente' });
     }
 
@@ -200,7 +202,7 @@ router.delete('/:table/:id', async (req, res) => {
     if (READONLY_TABLES.has(table)) {
       return res.status(403).json({ error: 'Tabla de solo lectura' });
     }
-    const liveUser = await validateUserLive(req.user.id, req.user.empresa_id);
+    const liveUser = await validateUser(req.user.id, req.user.empresa_id, { live: true });
     if (!CAN_DELETE.has(liveUser.rol)) {
       return res.status(403).json({ error: 'Solo administradores pueden eliminar registros' });
     }

@@ -4,28 +4,31 @@ import pool from '../db.js';
 const JWT_SECRET = process.env.JWT_SECRET;
 
 const userCache = new Map();
-const CACHE_TTL = 30000;
+const CACHE_TTL = 10000;
 
-async function validateUser(userId, empresaId) {
+const VALIDATE_SQL = `SELECT u.activo, ue.rol
+  FROM usuarios u
+  LEFT JOIN usuarios_empresas ue ON ue.usuario_id = u.id AND ue.empresa_id = $2
+  WHERE u.id = $1`;
+
+export async function validateUser(userId, empresaId, { live = false } = {}) {
   const key = `${userId}:${empresaId}`;
-  const cached = userCache.get(key);
-  if (cached && Date.now() - cached.ts < CACHE_TTL) {
-    return cached;
+  if (!live) {
+    const cached = userCache.get(key);
+    if (cached && Date.now() - cached.ts < CACHE_TTL) {
+      return cached;
+    }
   }
-  const result = await pool.query(
-    `SELECT u.activo, ue.rol
-     FROM usuarios u
-     LEFT JOIN usuarios_empresas ue ON ue.usuario_id = u.id AND ue.empresa_id = $2
-     WHERE u.id = $1`,
-    [userId, empresaId]
-  );
+  const result = await pool.query(VALIDATE_SQL, [userId, empresaId]);
   const row = result.rows[0];
   const entry = {
     activo: row ? row.activo === true : false,
     rol: row?.rol || null,
     ts: Date.now(),
   };
-  userCache.set(key, entry);
+  if (!live) {
+    userCache.set(key, entry);
+  }
   return entry;
 }
 
@@ -35,25 +38,6 @@ setInterval(() => {
     if (now - entry.ts > CACHE_TTL * 2) userCache.delete(key);
   }
 }, 60000).unref();
-
-export async function validateUserLive(userId, empresaId) {
-  const key = `${userId}:${empresaId}`;
-  const result = await pool.query(
-    `SELECT u.activo, ue.rol
-     FROM usuarios u
-     LEFT JOIN usuarios_empresas ue ON ue.usuario_id = u.id AND ue.empresa_id = $2
-     WHERE u.id = $1`,
-    [userId, empresaId]
-  );
-  const row = result.rows[0];
-  const entry = {
-    activo: row ? row.activo === true : false,
-    rol: row?.rol || null,
-    ts: Date.now(),
-  };
-  userCache.set(key, entry);
-  return entry;
-}
 
 export function invalidateUserCache(userId, empresaId) {
   if (empresaId) {

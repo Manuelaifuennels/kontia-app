@@ -80,7 +80,11 @@ router.post('/:endpoint', async (req, res) => {
     const isSafe = SAFE_CONTENT_TYPES.some((t) => contentType.includes(t));
 
     if (contentType.includes('application/json')) {
-      const data = await response.json();
+      const text = await response.text();
+      if (text.length > MAX_RESPONSE_SIZE) {
+        return res.status(502).json({ error: 'Respuesta del webhook demasiado grande' });
+      }
+      const data = JSON.parse(text);
       res.status(response.status).json(data);
     } else if (isSafe) {
       const buffer = await response.arrayBuffer();

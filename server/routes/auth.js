@@ -7,6 +7,9 @@ const router = Router();
 
 const DUMMY_HASH = bcrypt.hashSync('kontia-dummy-never-matches-x7k9', 12);
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const NIF_CIF_RE = /^[A-Z]\d{7}[A-Z0-9]$|^\d{8}[A-Z]$|^[XYZ]\d{7}[A-Z]$/;
+
 const loginAttempts = new Map();
 
 setInterval(() => {
@@ -99,8 +102,17 @@ router.post('/register', rateLimit, async (req, res) => {
       return res.status(400).json({ message: 'Todos los campos son obligatorios' });
     }
 
+    if (!EMAIL_RE.test(email.trim())) {
+      return res.status(400).json({ message: 'Formato de email inválido' });
+    }
+
     if (password.length < 8) {
       return res.status(400).json({ message: 'La contraseña debe tener al menos 8 caracteres' });
+    }
+
+    const nifNorm = (nif_empresa || '').trim().toUpperCase();
+    if (nifNorm && !NIF_CIF_RE.test(nifNorm)) {
+      return res.status(400).json({ message: 'Formato de NIF/CIF inválido' });
     }
 
     const exists = await pool.query(
@@ -117,7 +129,7 @@ router.post('/register', rateLimit, async (req, res) => {
 
       const empresa = await client.query(
         'INSERT INTO empresas (nombre, nif) VALUES ($1, $2) RETURNING id',
-        [empresa_nombre, (nif_empresa || '').trim().toUpperCase() || null]
+        [empresa_nombre, nifNorm || null]
       );
       const empresaId = empresa.rows[0].id;
 
@@ -141,7 +153,7 @@ router.post('/register', rateLimit, async (req, res) => {
         `INSERT INTO config (empresa_id, cif_empresa, nombre_empresa)
          VALUES ($1, $2, $3)
          ON CONFLICT DO NOTHING`,
-        [empresaId, (nif_empresa || '').trim().toUpperCase() || null, empresa_nombre]
+        [empresaId, nifNorm || null, empresa_nombre]
       );
 
       await client.query('COMMIT');
@@ -155,7 +167,7 @@ router.post('/register', rateLimit, async (req, res) => {
         rol: 'admin',
       };
 
-      const empresas = [{ empresa_id: empresaId, empresa_nombre, nif: (nif_empresa || '').trim().toUpperCase() || null, rol: 'admin' }];
+      const empresas = [{ empresa_id: empresaId, empresa_nombre, nif: nifNorm || null, rol: 'admin' }];
 
       const token = signToken(payload);
       res.json({ token, user: payload, empresas });
@@ -221,6 +233,11 @@ router.post('/create-empresa', authMiddleware, async (req, res) => {
       return res.status(400).json({ message: 'Nombre de empresa obligatorio' });
     }
 
+    const nifNorm = (nif || '').trim().toUpperCase();
+    if (nifNorm && !NIF_CIF_RE.test(nifNorm)) {
+      return res.status(400).json({ message: 'Formato de NIF/CIF inválido' });
+    }
+
     const countResult = await pool.query(
       'SELECT count(*)::int AS total FROM usuarios_empresas WHERE usuario_id = $1',
       [req.user.id]
@@ -235,7 +252,7 @@ router.post('/create-empresa', authMiddleware, async (req, res) => {
 
       const empresa = await client.query(
         'INSERT INTO empresas (nombre, nif) VALUES ($1, $2) RETURNING id, nombre, nif',
-        [nombre.trim(), (nif || '').trim().toUpperCase() || null]
+        [nombre.trim(), nifNorm || null]
       );
 
       await client.query(
