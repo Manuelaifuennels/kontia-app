@@ -7,7 +7,7 @@ router.use(authMiddleware);
 
 const ALLOWED_TABLES = new Set([
   'facturas', 'proveedores', 'clientes', 'reglas',
-  'usuarios', 'movimientos', 'ejercicios', 'asientos',
+  'usuarios', 'movimientos', 'ejercicios', 'asientos', 'apuntes',
   'config', 'emisor', 'historial', 'actividades', 'maestro',
 ]);
 
@@ -47,6 +47,9 @@ const EDITABLE_COLS = {
     'fecha', 'concepto', 'importe', 'referencia',
     'cuenta_bancaria', 'conciliado', 'saldo', 'factura_id',
   ]),
+  apuntes: new Set([
+    'asiento_id', 'cuenta', 'subcuenta', 'debe', 'haber', 'concepto',
+  ]),
 };
 
 const SYSTEM_COLS = new Set(['id', 'empresa_id', 'created_at', 'updated_at']);
@@ -79,6 +82,7 @@ const SORTABLE_COLS = {
   usuarios: new Set(['id', 'nombre', 'email', 'rol', 'ultimo_login', 'created_at']),
   historial: new Set(['id', 'fecha_envio', 'destinatario', 'estado', 'created_at']),
   actividades: new Set(['id', 'nombre_actividad', 'created_at']),
+  apuntes: new Set(['id', 'asiento_id', 'cuenta', 'subcuenta', 'debe', 'haber']),
 };
 
 const COL_RE = /^[a-z_][a-z0-9_]*$/i;
@@ -125,15 +129,17 @@ function safeError(err) {
 }
 
 async function ejercicioBloqueado(empresaId, fecha) {
-  if (!fecha) return true;
+  if (!fecha) return false;
   const d = new Date(fecha);
   const anio = d.getFullYear();
-  if (!Number.isFinite(anio)) return true;
+  if (!Number.isFinite(anio)) return false;
   const r = await pool.query(
-    'SELECT bloqueado FROM ejercicios WHERE empresa_id = $1 AND anio = $2',
+    'SELECT bloqueado, estado FROM ejercicios WHERE empresa_id = $1 AND anio = $2',
     [empresaId, anio]
   );
-  return !!r.rows[0]?.bloqueado;
+  const ej = r.rows[0];
+  if (!ej) return false;
+  return ej.bloqueado || ej.estado === 'cerrado';
 }
 
 router.post('/facturas/:id/contabilizar', async (req, res) => {
@@ -309,7 +315,7 @@ router.patch('/:table', async (req, res) => {
       if (fcheck.rows[0].estado === 'contabilizada') {
         return res.status(409).json({ error: 'Factura contabilizada: no se puede modificar' });
       }
-      if (await ejercicioBloqueado(req.user.empresa_id, fcheck.rows[0].fecha_factura)) {
+      if (fcheck.rows[0].fecha_factura && await ejercicioBloqueado(req.user.empresa_id, fcheck.rows[0].fecha_factura)) {
         return res.status(409).json({ error: 'Ejercicio bloqueado: factura inmutable' });
       }
       fcurrent = fcheck.rows[0];
@@ -446,7 +452,7 @@ router.delete('/:table/:id', async (req, res) => {
       if (fcheck.rows[0]?.estado === 'contabilizada') {
         return res.status(409).json({ error: 'Factura contabilizada: no se puede eliminar' });
       }
-      if (await ejercicioBloqueado(req.user.empresa_id, fcheck.rows[0]?.fecha_factura)) {
+      if (fcheck.rows[0]?.fecha_factura && await ejercicioBloqueado(req.user.empresa_id, fcheck.rows[0].fecha_factura)) {
         return res.status(409).json({ error: 'Ejercicio bloqueado: factura inmutable' });
       }
     }
