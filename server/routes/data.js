@@ -472,23 +472,48 @@ router.patch('/:table', async (req, res) => {
     }
 
     if (table === 'ejercicios' && (body.estado === 'cerrado' || body.bloqueado === true)) {
-      const descuadrados = await pool.query(
-        `SELECT a.id, a.numero,
-                COALESCE(SUM(ap.debe),0) AS total_debe,
-                COALESCE(SUM(ap.haber),0) AS total_haber
-         FROM asientos a
-         JOIN apuntes ap ON ap.asiento_id = a.id
-         WHERE a.ejercicio_id = $1 AND a.empresa_id = $2
-         GROUP BY a.id, a.numero
-         HAVING COALESCE(SUM(ap.debe),0) <> COALESCE(SUM(ap.haber),0)
-         LIMIT 5`,
-        [recordId, req.user.empresa_id]
-      );
-      if (descuadrados.rows.length > 0) {
-        const ids = descuadrados.rows.map(r => r.numero || `#${r.id}`).join(', ');
-        return res.status(409).json({
-          error: `No se puede cerrar: asientos descuadrados (${ids}). Corrige el cuadre antes de cerrar el ejercicio.`,
-        });
+      const cierreKeys = editableKeys(body, table);
+      if (cierreKeys.length === 0) return res.status(400).json({ error: 'No hay campos que actualizar' });
+      const cierreValues = cierreKeys.map(k => body[k]);
+      const cierreSet = cierreKeys.map((k, i) => `"${k}" = $${i + 1}`).join(', ');
+      cierreValues.push(recordId, req.user.empresa_id);
+      const cierreQuery = `UPDATE ejercicios SET ${cierreSet} WHERE id = $${cierreKeys.length + 1} AND empresa_id = $${cierreKeys.length + 2} RETURNING *`;
+
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query('SELECT pg_advisory_xact_lock($1)', [recordId]);
+
+        const descuadrados = await client.query(
+          `SELECT a.id, a.numero,
+                  COALESCE(SUM(ap.debe),0) AS total_debe,
+                  COALESCE(SUM(ap.haber),0) AS total_haber,
+                  COUNT(ap.id) AS num_apuntes
+           FROM asientos a
+           LEFT JOIN apuntes ap ON ap.asiento_id = a.id
+           WHERE a.ejercicio_id = $1 AND a.empresa_id = $2
+           GROUP BY a.id, a.numero
+           HAVING COALESCE(SUM(ap.debe),0) <> COALESCE(SUM(ap.haber),0)
+               OR COUNT(ap.id) = 0
+           LIMIT 5`,
+          [recordId, req.user.empresa_id]
+        );
+        if (descuadrados.rows.length > 0) {
+          await client.query('ROLLBACK');
+          const ids = descuadrados.rows.map(r => r.numero || `#${r.id}`).join(', ');
+          return res.status(409).json({
+            error: `No se puede cerrar: asientos descuadrados o vacíos (${ids}). Corrige el cuadre antes de cerrar el ejercicio.`,
+          });
+        }
+
+        const cierreResult = await client.query(cierreQuery, cierreValues);
+        await client.query('COMMIT');
+        return res.json(mapRow(cierreResult.rows[0]));
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
       }
     }
 
