@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { authMiddleware } from '../middleware/auth.js';
+import { authMiddleware, validateUser } from '../middleware/auth.js';
 
 const router = Router();
 router.use(authMiddleware);
@@ -54,10 +54,12 @@ router.post('/:endpoint', async (req, res) => {
     calls.push(now);
     webhookCalls.set(uid, calls);
 
+    const liveUser = await validateUser(req.user.id, req.user.empresa_id, { live: true });
+
     const body = { ...req.body };
     body.empresa_id = req.user.empresa_id;
     body.usuario_id = req.user.id;
-    body.rol = req.user.rol;
+    body.rol = liveUser.rol;
     delete body.token;
     delete body.password;
     delete body.jwt;

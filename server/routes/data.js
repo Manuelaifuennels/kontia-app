@@ -56,7 +56,12 @@ const COMPUTED_COLS = {
 };
 
 const PERIOD_TABLES = new Set(['asientos', 'movimientos']);
+const FISCAL_DATE_TABLES = new Set(['asientos', 'movimientos', 'facturas']);
 const CAN_CONTABILIZAR = new Set(['admin', 'contable']);
+const VALID_IVA = new Set([0, 4, 10, 21]);
+const MAX_BASE = 1e9;
+const MAX_REQ = 10;
+const MAX_RETENCION = 60;
 
 const SORTABLE_COLS = {
   facturas: new Set(['id', 'fecha_factura', 'numero_factura', 'total_factura', 'base_imponible', 'nombre_emisor', 'nombre_receptor', 'tipo_documento', 'estado', 'created_at']),
@@ -79,21 +84,29 @@ function validCol(name) {
   return COL_RE.test(name);
 }
 
-function editableKeys(body, table) {
+function editableKeys(body, table, computedApplied = false) {
   const wl = EDITABLE_COLS[table];
   const computed = COMPUTED_COLS[table];
-  if (wl) return Object.keys(body).filter(k => wl.has(k) || (computed && computed.has(k)));
+  if (wl) return Object.keys(body).filter(k => wl.has(k) || (computedApplied && computed && computed.has(k)));
   return Object.keys(body).filter(k => validCol(k) && !SYSTEM_COLS.has(k));
 }
 
 function recalcFactura(data) {
   const base = parseFloat(data.base_imponible);
   const tipoIva = parseFloat(data.tipo_iva);
-  if (isNaN(base) || isNaN(tipoIva)) return;
-  data.cuota_iva = Math.round(base * tipoIva) / 100;
+  if (!Number.isFinite(base) || !Number.isFinite(tipoIva)) return;
+  if (base < 0 || base > MAX_BASE)
+    throw Object.assign(new Error('base_imponible fuera de rango (0 a 1.000.000.000)'), { status: 400 });
+  if (!VALID_IVA.has(tipoIva))
+    throw Object.assign(new Error('tipo_iva no válido (permitidos: 0, 4, 10, 21)'), { status: 400 });
   const tipoReq = parseFloat(data.tipo_req) || 0;
-  data.cuota_req = Math.round(base * tipoReq) / 100;
+  if (tipoReq < 0 || tipoReq > MAX_REQ)
+    throw Object.assign(new Error('tipo_req fuera de rango (0 a 10)'), { status: 400 });
   const tipoRet = parseFloat(data.tipo_retencion) || 0;
+  if (tipoRet < 0 || tipoRet > MAX_RETENCION)
+    throw Object.assign(new Error('tipo_retencion fuera de rango (0 a 60)'), { status: 400 });
+  data.cuota_iva = Math.round(base * tipoIva) / 100;
+  data.cuota_req = Math.round(base * tipoReq) / 100;
   data.retencion = Math.round(base * tipoRet) / 100;
   data.total_factura = Math.round((base + data.cuota_iva - data.retencion + data.cuota_req) * 100) / 100;
 }
@@ -109,6 +122,18 @@ function safeError(err) {
   return isProd ? 'Error interno del servidor' : err.message;
 }
 
+async function ejercicioBloqueado(empresaId, fecha) {
+  if (!fecha) return true;
+  const d = new Date(fecha);
+  const anio = d.getFullYear();
+  if (!Number.isFinite(anio)) return true;
+  const r = await pool.query(
+    'SELECT bloqueado FROM ejercicios WHERE empresa_id = $1 AND anio = $2',
+    [empresaId, anio]
+  );
+  return !!r.rows[0]?.bloqueado;
+}
+
 router.post('/facturas/:id/contabilizar', async (req, res) => {
   try {
     const liveUser = await validateUser(req.user.id, req.user.empresa_id, { live: true });
@@ -122,7 +147,7 @@ router.post('/facturas/:id/contabilizar', async (req, res) => {
     const facturaId = parseInt(req.params.id, 10);
 
     const fcheck = await pool.query(
-      'SELECT id, contabilizada, base_imponible, tipo_iva, tipo_req, tipo_retencion FROM facturas WHERE id = $1 AND empresa_id = $2',
+      'SELECT id, contabilizada, base_imponible, tipo_iva, tipo_req, tipo_retencion, fecha_factura FROM facturas WHERE id = $1 AND empresa_id = $2',
       [facturaId, req.user.empresa_id]
     );
     if (fcheck.rows.length === 0) {
@@ -133,23 +158,33 @@ router.post('/facturas/:id/contabilizar', async (req, res) => {
     }
 
     const row = fcheck.rows[0];
+
+    if (await ejercicioBloqueado(req.user.empresa_id, row.fecha_factura)) {
+      return res.status(409).json({ error: 'Ejercicio bloqueado: no se puede contabilizar' });
+    }
+
     const base = parseFloat(row.base_imponible);
     const tipoIva = parseFloat(row.tipo_iva);
-    if (isNaN(base) || isNaN(tipoIva)) {
+    if (!Number.isFinite(base) || !Number.isFinite(tipoIva)) {
       return res.status(400).json({ error: 'Factura incompleta: falta base_imponible o tipo_iva' });
     }
 
     recalcFactura(row);
 
     const result = await pool.query(
-      `UPDATE facturas SET contabilizada = true, cuota_iva = $1, cuota_req = $2, retencion = $3, total_factura = $4
-       WHERE id = $5 AND empresa_id = $6 RETURNING *`,
-      [row.cuota_iva, row.cuota_req, row.retencion, row.total_factura, facturaId, req.user.empresa_id]
+      `UPDATE facturas SET contabilizada = true, cuota_iva = $1, cuota_req = $2, retencion = $3, total_factura = $4,
+       contabilizada_por = $5, contabilizada_at = NOW()
+       WHERE id = $6 AND empresa_id = $7 AND contabilizada = false RETURNING *`,
+      [row.cuota_iva, row.cuota_req, row.retencion, row.total_factura, req.user.id, facturaId, req.user.empresa_id]
     );
+
+    if (result.rowCount === 0) {
+      return res.status(409).json({ error: 'Factura ya contabilizada' });
+    }
 
     res.json(mapRow(result.rows[0]));
   } catch (err) {
-    res.status(500).json({ error: safeError(err) });
+    res.status(err.status || 500).json({ error: safeError(err) });
   }
 });
 
@@ -161,8 +196,8 @@ router.get('/:table', async (req, res) => {
     }
 
     const sort = Array.isArray(req.query.sort) ? req.query.sort[0] : req.query.sort;
-    const limit = Math.min(Math.max(parseInt(Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit) || 200, 1), 500);
-    const offset = Math.max(parseInt(Array.isArray(req.query.offset) ? req.query.offset[0] : req.query.offset) || 0, 0);
+    const limit = Math.min(Math.max(parseInt(Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit, 10) || 200, 1), 500);
+    const offset = Math.max(parseInt(Array.isArray(req.query.offset) ? req.query.offset[0] : req.query.offset, 10) || 0, 0);
 
     let orderBy = 'id DESC';
     if (sort) {
@@ -206,11 +241,20 @@ router.post('/:table', async (req, res) => {
     delete body.created_at; delete body.updated_at;
     delete body.empresa_id;
 
+    const dateCol = table === 'facturas' ? 'fecha_factura' : 'fecha';
+    if (FISCAL_DATE_TABLES.has(table) && body[dateCol]) {
+      if (await ejercicioBloqueado(req.user.empresa_id, body[dateCol])) {
+        return res.status(409).json({ error: 'Ejercicio bloqueado: no se puede crear registro en periodo cerrado' });
+      }
+    }
+
+    let computedApplied = false;
     if (table === 'facturas') {
       for (const col of COMPUTED_COLS.facturas) delete body[col];
       recalcFactura(body);
+      computedApplied = true;
     }
-    const keys = editableKeys(body, table);
+    const keys = editableKeys(body, table, computedApplied);
     const allKeys = ['empresa_id', ...keys];
     const allValues = [req.user.empresa_id, ...keys.map(k => body[k])];
     const placeholders = allKeys.map((_, i) => `$${i + 1}`);
@@ -270,13 +314,15 @@ router.patch('/:table', async (req, res) => {
     }
 
     if (PERIOD_TABLES.has(table)) {
-      const ejCheck = await pool.query(
-        `SELECT e.bloqueado FROM ejercicios e
-         WHERE e.empresa_id = $1
-           AND e.anio = (SELECT date_part('year', fecha)::int FROM "${table}" WHERE id = $2 AND empresa_id = $1)`,
-        [req.user.empresa_id, recordId]
+      const fechaCheck = await pool.query(
+        `SELECT fecha FROM "${table}" WHERE id = $1 AND empresa_id = $2`,
+        [recordId, req.user.empresa_id]
       );
-      if (ejCheck.rows[0]?.bloqueado) {
+      const currentFecha = fechaCheck.rows[0]?.fecha;
+      if (!currentFecha) {
+        return res.status(400).json({ error: 'Registro sin fecha válida' });
+      }
+      if (await ejercicioBloqueado(req.user.empresa_id, currentFecha)) {
         return res.status(409).json({ error: 'Ejercicio bloqueado: registro inmutable' });
       }
     }
@@ -293,6 +339,21 @@ router.patch('/:table', async (req, res) => {
       delete body.activo;
     }
 
+    if (table === 'config' && body.cif_empresa) {
+      const cif = body.cif_empresa.trim().toUpperCase();
+      if (!NIF_CIF_RE.test(cif)) {
+        return res.status(400).json({ error: 'Formato de CIF/NIF inválido' });
+      }
+    }
+
+    const dateCol = table === 'facturas' ? 'fecha_factura' : 'fecha';
+    if (FISCAL_DATE_TABLES.has(table) && body[dateCol]) {
+      if (await ejercicioBloqueado(req.user.empresa_id, body[dateCol])) {
+        return res.status(409).json({ error: 'Fecha destino en ejercicio bloqueado' });
+      }
+    }
+
+    let computedApplied = false;
     if (table === 'facturas' && fcurrent) {
       for (const col of COMPUTED_COLS.facturas) delete body[col];
       const merged = { ...fcurrent, ...body };
@@ -300,8 +361,9 @@ router.patch('/:table', async (req, res) => {
       for (const col of COMPUTED_COLS.facturas) {
         if (merged[col] !== undefined) body[col] = merged[col];
       }
+      computedApplied = true;
     }
-    const keys = editableKeys(body, table);
+    const keys = editableKeys(body, table, computedApplied);
     if (keys.length === 0) return res.status(400).json({ error: 'No hay campos que actualizar' });
 
     const values = keys.map((k) => body[k]);
@@ -314,9 +376,6 @@ router.patch('/:table', async (req, res) => {
 
     if (table === 'config' && body.cif_empresa) {
       const cif = body.cif_empresa.trim().toUpperCase();
-      if (!NIF_CIF_RE.test(cif)) {
-        return res.status(400).json({ error: 'Formato de CIF/NIF inválido' });
-      }
       try {
         await pool.query(
           'UPDATE empresas SET nif = $1 WHERE id = $2',
@@ -372,13 +431,15 @@ router.delete('/:table/:id', async (req, res) => {
     }
 
     if (PERIOD_TABLES.has(table)) {
-      const ejCheck = await pool.query(
-        `SELECT e.bloqueado FROM ejercicios e
-         WHERE e.empresa_id = $1
-           AND e.anio = (SELECT date_part('year', fecha)::int FROM "${table}" WHERE id = $2 AND empresa_id = $1)`,
-        [req.user.empresa_id, deleteId]
+      const fechaCheck = await pool.query(
+        `SELECT fecha FROM "${table}" WHERE id = $1 AND empresa_id = $2`,
+        [deleteId, req.user.empresa_id]
       );
-      if (ejCheck.rows[0]?.bloqueado) {
+      const currentFecha = fechaCheck.rows[0]?.fecha;
+      if (!currentFecha) {
+        return res.status(400).json({ error: 'Registro sin fecha válida' });
+      }
+      if (await ejercicioBloqueado(req.user.empresa_id, currentFecha)) {
         return res.status(409).json({ error: 'Ejercicio bloqueado: registro inmutable' });
       }
     }
