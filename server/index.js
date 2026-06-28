@@ -1,7 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
-import cookieParser from 'cookie-parser';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -24,8 +23,8 @@ const isProd = process.env.NODE_ENV === 'production';
 
 app.set('trust proxy', 1);
 
-app.use(express.json({ limit: '10mb' }));
-app.use(cookieParser());
+app.use('/api/webhook', express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '100kb' }));
 
 app.use((_req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -54,7 +53,7 @@ app.get('/api/status', async (_req, res) => {
     await pool.query('SELECT 1');
     res.json({ status: 'ok' });
   } catch {
-    res.status(503).json({ status: 'db_error' });
+    res.status(503).json({ status: 'unavailable' });
   }
 });
 

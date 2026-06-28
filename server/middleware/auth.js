@@ -36,6 +36,35 @@ setInterval(() => {
   }
 }, 60000).unref();
 
+export async function validateUserLive(userId, empresaId) {
+  const key = `${userId}:${empresaId}`;
+  const result = await pool.query(
+    `SELECT u.activo, ue.rol
+     FROM usuarios u
+     LEFT JOIN usuarios_empresas ue ON ue.usuario_id = u.id AND ue.empresa_id = $2
+     WHERE u.id = $1`,
+    [userId, empresaId]
+  );
+  const row = result.rows[0];
+  const entry = {
+    activo: row ? row.activo === true : false,
+    rol: row?.rol || null,
+    ts: Date.now(),
+  };
+  userCache.set(key, entry);
+  return entry;
+}
+
+export function invalidateUserCache(userId, empresaId) {
+  if (empresaId) {
+    userCache.delete(`${userId}:${empresaId}`);
+  } else {
+    for (const key of userCache.keys()) {
+      if (key.startsWith(`${userId}:`)) userCache.delete(key);
+    }
+  }
+}
+
 export function signToken(user) {
   return jwt.sign(
     {

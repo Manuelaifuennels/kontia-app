@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import pool from '../db.js';
-import { authMiddleware, signToken } from '../middleware/auth.js';
+import { authMiddleware, signToken, invalidateUserCache } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -125,7 +125,7 @@ router.post('/register', rateLimit, async (req, res) => {
 
       const usuario = await client.query(
         `INSERT INTO usuarios (empresa_id, nombre, email, password, rol, activo)
-         VALUES ($1, $2, $3, $4, 'admin', true) RETURNING id`,
+         VALUES ($1, $2, $3, $4, 'usuario', true) RETURNING id`,
         [empresaId, nombre, email.toLowerCase().trim(), hash]
       );
       const userId = usuario.rows[0].id;
@@ -194,6 +194,8 @@ router.post('/switch-empresa', authMiddleware, async (req, res) => {
 
     const { rol, empresa_nombre } = access.rows[0];
 
+    invalidateUserCache(req.user.id, eid);
+
     const payload = {
       id: req.user.id,
       email: req.user.email,
@@ -210,11 +212,21 @@ router.post('/switch-empresa', authMiddleware, async (req, res) => {
   }
 });
 
+const MAX_EMPRESAS_PER_USER = 50;
+
 router.post('/create-empresa', authMiddleware, async (req, res) => {
   try {
     const { nombre, nif } = req.body;
     if (!nombre) {
       return res.status(400).json({ message: 'Nombre de empresa obligatorio' });
+    }
+
+    const countResult = await pool.query(
+      'SELECT count(*)::int AS total FROM usuarios_empresas WHERE usuario_id = $1',
+      [req.user.id]
+    );
+    if (countResult.rows[0].total >= MAX_EMPRESAS_PER_USER) {
+      return res.status(400).json({ message: `Máximo ${MAX_EMPRESAS_PER_USER} empresas por usuario` });
     }
 
     const client = await pool.connect();
@@ -239,6 +251,8 @@ router.post('/create-empresa', authMiddleware, async (req, res) => {
       );
 
       await client.query('COMMIT');
+
+      invalidateUserCache(req.user.id);
 
       const empresas = await getEmpresasForUser(req.user.id);
       res.json({ empresa: empresa.rows[0], empresas });

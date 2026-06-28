@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import pool from '../db.js';
-import { authMiddleware } from '../middleware/auth.js';
+import { authMiddleware, validateUserLive } from '../middleware/auth.js';
 
 const router = Router();
 router.use(authMiddleware);
@@ -134,8 +134,11 @@ router.patch('/:table', async (req, res) => {
       return res.status(403).json({ error: 'Permiso insuficiente' });
     }
 
-    const recordId = req.body.Id || req.body.id;
-    if (!recordId) return res.status(400).json({ error: 'Id requerido' });
+    const rawId = req.body.Id || req.body.id;
+    const recordId = parseInt(rawId);
+    if (!Number.isInteger(recordId) || recordId <= 0) {
+      return res.status(400).json({ error: 'Id requerido (entero positivo)' });
+    }
 
     const check = await pool.query(
       `SELECT id FROM "${table}" WHERE id = $1 AND empresa_id = $2`,
@@ -197,13 +200,19 @@ router.delete('/:table/:id', async (req, res) => {
     if (READONLY_TABLES.has(table)) {
       return res.status(403).json({ error: 'Tabla de solo lectura' });
     }
-    if (!CAN_DELETE.has(req.user.rol)) {
+    const liveUser = await validateUserLive(req.user.id, req.user.empresa_id);
+    if (!CAN_DELETE.has(liveUser.rol)) {
       return res.status(403).json({ error: 'Solo administradores pueden eliminar registros' });
+    }
+
+    const deleteId = parseInt(req.params.id);
+    if (!Number.isInteger(deleteId) || deleteId <= 0) {
+      return res.status(400).json({ error: 'Id inválido' });
     }
 
     const result = await pool.query(
       `DELETE FROM "${table}" WHERE id = $1 AND empresa_id = $2 RETURNING id`,
-      [req.params.id, req.user.empresa_id]
+      [deleteId, req.user.empresa_id]
     );
     if (result.rows.length === 0) {
       return res.status(403).json({ error: 'Sin acceso a este registro' });

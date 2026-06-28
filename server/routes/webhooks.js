@@ -22,6 +22,8 @@ const SAFE_CONTENT_TYPES = [
   'text/plain',
 ];
 
+const MAX_RESPONSE_SIZE = 50 * 1024 * 1024;
+
 const webhookCalls = new Map();
 const WEBHOOK_LIMIT = 20;
 const WEBHOOK_WINDOW = 15 * 60 * 1000;
@@ -70,6 +72,11 @@ router.post('/:endpoint', async (req, res) => {
     }
 
     const contentType = response.headers.get('content-type') || '';
+    const contentLength = parseInt(response.headers.get('content-length') || '0');
+    if (contentLength > MAX_RESPONSE_SIZE) {
+      return res.status(502).json({ error: 'Respuesta del webhook demasiado grande' });
+    }
+
     const isSafe = SAFE_CONTENT_TYPES.some((t) => contentType.includes(t));
 
     if (contentType.includes('application/json')) {
@@ -77,6 +84,9 @@ router.post('/:endpoint', async (req, res) => {
       res.status(response.status).json(data);
     } else if (isSafe) {
       const buffer = await response.arrayBuffer();
+      if (buffer.byteLength > MAX_RESPONSE_SIZE) {
+        return res.status(502).json({ error: 'Respuesta del webhook demasiado grande' });
+      }
       res.status(response.status)
         .set('Content-Type', contentType)
         .send(Buffer.from(buffer));
