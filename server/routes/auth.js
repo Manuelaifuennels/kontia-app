@@ -82,7 +82,7 @@ router.post('/login', loginRateLimit, async (req, res) => {
     const user = result.rows[0];
     const valid = await bcrypt.compare(password, user?.password || DUMMY_HASH);
     if (!user || !valid || !user.activo) {
-      acctFails.push(Date.now());
+      if (acctFails.length < 50) acctFails.push(Date.now());
       accountLockMap.set(emailNorm, acctFails);
       return res.status(401).json({ message: 'Credenciales incorrectas' });
     }
@@ -213,8 +213,12 @@ router.post('/register', registerRateLimit, async (req, res) => {
 
 router.post('/switch-empresa', authMiddleware, async (req, res) => {
   try {
-    const eid = parseInt(req.body.empresa_id);
-    if (!Number.isInteger(eid) || eid <= 0) {
+    const rawEid = String(req.body.empresa_id || '');
+    if (!/^\d+$/.test(rawEid)) {
+      return res.status(400).json({ message: 'empresa_id inválido' });
+    }
+    const eid = parseInt(rawEid, 10);
+    if (eid <= 0) {
       return res.status(400).json({ message: 'empresa_id inválido' });
     }
 

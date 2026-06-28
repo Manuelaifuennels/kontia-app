@@ -13,7 +13,7 @@ const VALIDATE_SQL = `SELECT u.activo, ue.rol
 
 export async function validateUser(userId, empresaId, { live = false } = {}) {
   const key = `${userId}:${empresaId}`;
-  if (!live) {
+  if (!live && empresaId) {
     const cached = userCache.get(key);
     if (cached && Date.now() - cached.ts < CACHE_TTL) {
       return cached;
@@ -26,7 +26,7 @@ export async function validateUser(userId, empresaId, { live = false } = {}) {
     rol: row?.rol || null,
     ts: Date.now(),
   };
-  if (!live) {
+  if (!live && empresaId) {
     userCache.set(key, entry);
   }
   return entry;

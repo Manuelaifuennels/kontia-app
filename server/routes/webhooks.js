@@ -54,7 +54,13 @@ router.post('/:endpoint', async (req, res) => {
     calls.push(now);
     webhookCalls.set(uid, calls);
 
-    const body = { ...req.body, empresa_id: req.user.empresa_id };
+    const body = { ...req.body };
+    body.empresa_id = req.user.empresa_id;
+    body.usuario_id = req.user.id;
+    body.rol = req.user.rol;
+    delete body.token;
+    delete body.password;
+    delete body.jwt;
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 120000);
