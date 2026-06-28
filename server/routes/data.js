@@ -471,6 +471,27 @@ router.patch('/:table', async (req, res) => {
       }
     }
 
+    if (table === 'ejercicios' && (body.estado === 'cerrado' || body.bloqueado === true)) {
+      const descuadrados = await pool.query(
+        `SELECT a.id, a.numero,
+                COALESCE(SUM(ap.debe),0) AS total_debe,
+                COALESCE(SUM(ap.haber),0) AS total_haber
+         FROM asientos a
+         JOIN apuntes ap ON ap.asiento_id = a.id
+         WHERE a.ejercicio_id = $1 AND a.empresa_id = $2
+         GROUP BY a.id, a.numero
+         HAVING COALESCE(SUM(ap.debe),0) <> COALESCE(SUM(ap.haber),0)
+         LIMIT 5`,
+        [recordId, req.user.empresa_id]
+      );
+      if (descuadrados.rows.length > 0) {
+        const ids = descuadrados.rows.map(r => r.numero || `#${r.id}`).join(', ');
+        return res.status(409).json({
+          error: `No se puede cerrar: asientos descuadrados (${ids}). Corrige el cuadre antes de cerrar el ejercicio.`,
+        });
+      }
+    }
+
     const dateCol = table === 'facturas' ? 'fecha_factura' : 'fecha';
     if (FISCAL_DATE_TABLES.has(table) && body[dateCol]) {
       if (await ejercicioBloqueado(req.user.empresa_id, body[dateCol])) {

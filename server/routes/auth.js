@@ -15,10 +15,11 @@ const RATE_WINDOW = 15 * 60 * 1000;
 const loginRateMap = new Map();
 const registerRateMap = new Map();
 const accountLockMap = new Map();
+const accountLockGlobalMap = new Map();
 
 setInterval(() => {
   const now = Date.now();
-  for (const store of [loginRateMap, registerRateMap, accountLockMap]) {
+  for (const store of [loginRateMap, registerRateMap, accountLockMap, accountLockGlobalMap]) {
     for (const [key, attempts] of store) {
       const recent = attempts.filter(t => now - t < RATE_WINDOW);
       if (recent.length === 0) store.delete(key);
@@ -72,6 +73,11 @@ router.post('/login', loginRateLimit, async (req, res) => {
       return res.status(429).json({ message: 'Cuenta bloqueada temporalmente. Espera 15 minutos.' });
     }
 
+    const acctGlobal = (accountLockGlobalMap.get(emailNorm) || []).filter(t => Date.now() - t < RATE_WINDOW);
+    if (acctGlobal.length >= 30) {
+      return res.status(429).json({ message: 'Demasiados intentos en esta cuenta. Verificación adicional requerida.' });
+    }
+
     const result = await pool.query(
       `SELECT u.id, u.email, u.nombre, u.password, u.rol, u.activo,
               u.empresa_id, e.nombre AS empresa_nombre
@@ -86,10 +92,13 @@ router.post('/login', loginRateLimit, async (req, res) => {
     if (!user || !valid || !user.activo) {
       if (acctFails.length < 50) acctFails.push(Date.now());
       accountLockMap.set(lockKey, acctFails);
+      if (acctGlobal.length < 200) acctGlobal.push(Date.now());
+      accountLockGlobalMap.set(emailNorm, acctGlobal);
       return res.status(401).json({ message: 'Credenciales incorrectas' });
     }
 
     accountLockMap.delete(lockKey);
+    accountLockGlobalMap.delete(emailNorm);
 
     await pool.query('UPDATE usuarios SET ultimo_login = NOW() WHERE id = $1', [user.id]);
 
@@ -180,7 +189,7 @@ router.post('/register', registerRateLimit, async (req, res) => {
       await client.query(
         `INSERT INTO config (empresa_id, cif_empresa, nombre_empresa)
          VALUES ($1, $2, $3)
-         ON CONFLICT DO NOTHING`,
+         ON CONFLICT (empresa_id) DO NOTHING`,
         [empresaId, nifNorm || null, empresa_nombre]
       );
 
