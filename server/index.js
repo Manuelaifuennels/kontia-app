@@ -25,6 +25,18 @@ const isProd = process.env.NODE_ENV === 'production';
 app.use(express.json({ limit: '10mb' }));
 app.use(cookieParser());
 
+app.use((_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  if (isProd) {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+  next();
+});
+
 if (!isProd) {
   app.use(cors({ origin: 'http://localhost:5173', credentials: true }));
 }
@@ -33,17 +45,12 @@ app.use('/api/auth', authRoutes);
 app.use('/api/data', dataRoutes);
 app.use('/api/webhook', webhookRoutes);
 
-app.get('/api/status', async (req, res) => {
+app.get('/api/status', async (_req, res) => {
   try {
-    const dbResult = await pool.query('SELECT NOW() AS now');
-    res.json({
-      db: 'connected',
-      db_time: dbResult.rows[0].now,
-      webhooks: (process.env.WEBHOOK_URL || '').replace('https://', ''),
-      minio: (process.env.MINIO_URL || '').replace('https://', ''),
-    });
-  } catch (err) {
-    res.json({ db: 'error', db_error: err.message });
+    await pool.query('SELECT 1');
+    res.json({ status: 'ok' });
+  } catch {
+    res.status(503).json({ status: 'db_error' });
   }
 });
 

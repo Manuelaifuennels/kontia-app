@@ -21,6 +21,22 @@ function rateLimit(req, res, next) {
   next();
 }
 
+async function getEmpresasForUser(userId) {
+  try {
+    const result = await pool.query(
+      `SELECT e.id AS empresa_id, e.nombre AS empresa_nombre, e.nif, ue.rol
+       FROM usuarios_empresas ue
+       JOIN empresas e ON e.id = ue.empresa_id
+       WHERE ue.usuario_id = $1
+       ORDER BY ue.created_at ASC`,
+      [userId]
+    );
+    return result.rows;
+  } catch {
+    return [];
+  }
+}
+
 router.post('/login', rateLimit, async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -54,17 +70,24 @@ router.post('/login', rateLimit, async (req, res) => {
 
     await pool.query('UPDATE usuarios SET ultimo_login = NOW() WHERE id = $1', [user.id]);
 
+    let empresas = await getEmpresasForUser(user.id);
+    if (empresas.length === 0) {
+      empresas = [{ empresa_id: user.empresa_id, empresa_nombre: user.empresa_nombre, nif: null, rol: user.rol || 'admin' }];
+    }
+
+    const activeEmpresa = empresas[0];
+
     const payload = {
       id: user.id,
       email: user.email,
       nombre: user.nombre,
-      empresa_id: user.empresa_id,
-      empresa_nombre: user.empresa_nombre,
-      rol: user.rol,
+      empresa_id: activeEmpresa.empresa_id,
+      empresa_nombre: activeEmpresa.empresa_nombre,
+      rol: activeEmpresa.rol,
     };
 
     const token = signToken(payload);
-    res.json({ token, user: payload });
+    res.json({ token, user: payload, empresas });
   } catch (err) {
     res.status(500).json({ message: 'Error en login' });
   }
@@ -72,7 +95,7 @@ router.post('/login', rateLimit, async (req, res) => {
 
 router.post('/register', rateLimit, async (req, res) => {
   try {
-    const { email, password, nombre, empresa_nombre } = req.body;
+    const { email, password, nombre, empresa_nombre, nif_empresa } = req.body;
     if (!email || !password || !nombre || !empresa_nombre) {
       return res.status(400).json({ message: 'Todos los campos son obligatorios' });
     }
@@ -90,8 +113,8 @@ router.post('/register', rateLimit, async (req, res) => {
       await client.query('BEGIN');
 
       const empresa = await client.query(
-        'INSERT INTO empresas (nombre) VALUES ($1) RETURNING id',
-        [empresa_nombre]
+        'INSERT INTO empresas (nombre, nif) VALUES ($1, $2) RETURNING id',
+        [empresa_nombre, (nif_empresa || '').trim().toUpperCase() || null]
       );
       const empresaId = empresa.rows[0].id;
 
@@ -102,11 +125,26 @@ router.post('/register', rateLimit, async (req, res) => {
          VALUES ($1, $2, $3, $4, 'admin', true) RETURNING id`,
         [empresaId, nombre, email.toLowerCase().trim(), hash]
       );
+      const userId = usuario.rows[0].id;
+
+      try {
+        await client.query(
+          `INSERT INTO usuarios_empresas (usuario_id, empresa_id, rol) VALUES ($1, $2, 'admin')`,
+          [userId, empresaId]
+        );
+      } catch {}
+
+      try {
+        await client.query(
+          `INSERT INTO config (empresa_id, cif_empresa, nombre_empresa) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+          [empresaId, (nif_empresa || '').trim().toUpperCase() || null, empresa_nombre]
+        );
+      } catch {}
 
       await client.query('COMMIT');
 
       const payload = {
-        id: usuario.rows[0].id,
+        id: userId,
         email: email.toLowerCase().trim(),
         nombre,
         empresa_id: empresaId,
@@ -114,8 +152,10 @@ router.post('/register', rateLimit, async (req, res) => {
         rol: 'admin',
       };
 
+      const empresas = [{ empresa_id: empresaId, empresa_nombre, nif: (nif_empresa || '').trim().toUpperCase() || null, rol: 'admin' }];
+
       const token = signToken(payload);
-      res.json({ token, user: payload });
+      res.json({ token, user: payload, empresas });
     } catch (err) {
       await client.query('ROLLBACK');
       throw err;
@@ -130,8 +170,91 @@ router.post('/register', rateLimit, async (req, res) => {
   }
 });
 
-router.get('/me', authMiddleware, (req, res) => {
-  res.json({ user: req.user });
+router.post('/switch-empresa', authMiddleware, async (req, res) => {
+  try {
+    const { empresa_id } = req.body;
+    if (!empresa_id) {
+      return res.status(400).json({ message: 'empresa_id requerido' });
+    }
+
+    const access = await pool.query(
+      `SELECT ue.rol, e.nombre AS empresa_nombre
+       FROM usuarios_empresas ue
+       JOIN empresas e ON e.id = ue.empresa_id
+       WHERE ue.usuario_id = $1 AND ue.empresa_id = $2`,
+      [req.user.id, empresa_id]
+    );
+
+    if (access.rows.length === 0) {
+      return res.status(403).json({ message: 'Sin acceso a esta empresa' });
+    }
+
+    const { rol, empresa_nombre } = access.rows[0];
+
+    const payload = {
+      id: req.user.id,
+      email: req.user.email,
+      nombre: req.user.nombre,
+      empresa_id: parseInt(empresa_id),
+      empresa_nombre,
+      rol,
+    };
+
+    const token = signToken(payload);
+    res.json({ token, user: payload });
+  } catch (err) {
+    res.status(500).json({ message: 'Error al cambiar empresa' });
+  }
+});
+
+router.post('/create-empresa', authMiddleware, async (req, res) => {
+  try {
+    const { nombre, nif } = req.body;
+    if (!nombre) {
+      return res.status(400).json({ message: 'Nombre de empresa obligatorio' });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const empresa = await client.query(
+        'INSERT INTO empresas (nombre, nif) VALUES ($1, $2) RETURNING id, nombre, nif',
+        [nombre.trim(), (nif || '').trim().toUpperCase() || null]
+      );
+
+      await client.query(
+        `INSERT INTO usuarios_empresas (usuario_id, empresa_id, rol) VALUES ($1, $2, 'admin')`,
+        [req.user.id, empresa.rows[0].id]
+      );
+
+      await client.query(
+        `INSERT INTO config (empresa_id, cif_empresa, nombre_empresa) VALUES ($1, $2, $3)`,
+        [empresa.rows[0].id, empresa.rows[0].nif, nombre.trim()]
+      );
+
+      await client.query('COMMIT');
+
+      const empresas = await getEmpresasForUser(req.user.id);
+      res.json({ empresa: empresa.rows[0], empresas });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    res.status(500).json({ message: 'Error al crear empresa' });
+  }
+});
+
+router.get('/me', authMiddleware, async (req, res) => {
+  try {
+    const empresas = await getEmpresasForUser(req.user.id);
+    res.json({ user: req.user, empresas });
+  } catch (err) {
+    res.json({ user: req.user, empresas: [] });
+  }
 });
 
 export default router;

@@ -14,7 +14,8 @@ async function apiFetch(path, opts = {}) {
   if (res.status === 401 && !path.startsWith("/auth/")) {
     localStorage.removeItem("kontia_user");
     localStorage.removeItem("kontia_token");
-    window.location.href = "/login";
+    localStorage.removeItem("kontia_empresas");
+    window.location.reload();
     throw new Error("Sesión expirada");
   }
 

@@ -5,7 +5,7 @@ import { useAuth } from "../hooks/useAuth";
 export default function Login() {
   const { login } = useAuth();
   const [mode, setMode] = useState("login");
-  const [form, setForm] = useState({ email: "", password: "", nombre: "", empresa_nombre: "" });
+  const [form, setForm] = useState({ email: "", password: "", nombre: "", empresa_nombre: "", nif_empresa: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -21,10 +21,10 @@ export default function Login() {
       const payload =
         mode === "login"
           ? { email: form.email, password: form.password }
-          : { email: form.email, password: form.password, nombre: form.nombre, empresa_nombre: form.empresa_nombre };
+          : { email: form.email, password: form.password, nombre: form.nombre, empresa_nombre: form.empresa_nombre, nif_empresa: form.nif_empresa };
 
       const data = await api.post(endpoint, payload);
-      login(data.user, data.token);
+      login(data.user, data.token, data.empresas || []);
     } catch (err) {
       setError(err.message || "Error de conexión");
     } finally {
@@ -85,6 +85,13 @@ export default function Login() {
                   required
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500"
                 />
+                <input
+                  type="text"
+                  placeholder="CIF / NIF de la empresa"
+                  value={form.nif_empresa}
+                  onChange={set("nif_empresa")}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500"
+                />
               </>
             )}
 
@@ -98,10 +105,11 @@ export default function Login() {
             />
             <input
               type="password"
-              placeholder="••••••••"
+              placeholder="Contraseña"
               value={form.password}
               onChange={set("password")}
               required
+              minLength={6}
               className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500"
             />
 
@@ -113,10 +121,6 @@ export default function Login() {
               {loading ? "Procesando..." : mode === "login" ? "Entrar" : "Crear cuenta"}
             </button>
           </form>
-
-          <p className="mt-4 text-center text-xs text-gray-400">
-            Demo: demo@kontia.es / demo2024
-          </p>
         </div>
       </div>
     </div>

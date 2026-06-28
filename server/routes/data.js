@@ -8,6 +8,7 @@ router.use(authMiddleware);
 const ALLOWED_TABLES = new Set([
   'facturas', 'proveedores', 'clientes', 'reglas',
   'usuarios', 'movimientos', 'ejercicios', 'asientos',
+  'config', 'emisor', 'historial', 'actividades', 'maestro',
 ]);
 
 const COL_RE = /^[a-z_][a-z0-9_]*$/i;
@@ -44,7 +45,8 @@ router.get('/:table', async (req, res) => {
       }
     }
 
-    const query = `SELECT * FROM "${table}" WHERE empresa_id = $1 ORDER BY ${orderBy} LIMIT $2 OFFSET $3`;
+    const cols = table === 'usuarios' ? 'id, empresa_id, nombre, email, rol, activo, ultimo_login, created_at, updated_at' : '*';
+    const query = `SELECT ${cols} FROM "${table}" WHERE empresa_id = $1 ORDER BY ${orderBy} LIMIT $2 OFFSET $3`;
     const result = await pool.query(query, [req.user.empresa_id, parseInt(limit), parseInt(offset)]);
     res.json({ list: result.rows.map(mapRow) });
   } catch (err) {
@@ -110,6 +112,16 @@ router.patch('/:table', async (req, res) => {
 
     const query = `UPDATE "${table}" SET ${setClause} WHERE id = $${keys.length + 1} AND empresa_id = $${keys.length + 2} RETURNING *`;
     const result = await pool.query(query, values);
+
+    if (table === 'config' && body.cif_empresa) {
+      try {
+        await pool.query(
+          'UPDATE empresas SET nif = $1 WHERE id = $2',
+          [body.cif_empresa.trim().toUpperCase(), req.user.empresa_id]
+        );
+      } catch {}
+    }
+
     res.json(mapRow(result.rows[0]));
   } catch (err) {
     res.status(err.status || 500).json({ error: safeError(err) });
