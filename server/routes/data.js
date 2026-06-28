@@ -19,11 +19,29 @@ const CAN_DELETE = new Set(['admin']);
 
 const USUARIOS_SAFE_COLS = 'id, empresa_id, nombre, email, rol, activo, ultimo_login, created_at, updated_at';
 
-const PROTECTED_COLS = {
-  facturas: new Set(['estado', 'contabilizada', 'ejercicio_id', 'asiento_id']),
-  asientos: new Set(['descuadre', 'numero']),
-  movimientos: new Set(['conciliado']),
+const EDITABLE_COLS = {
+  facturas: new Set([
+    'nombre_emisor', 'nif_emisor', 'nombre_receptor', 'nif_receptor',
+    'direccion_emisor', 'direccion_receptor',
+    'fecha_factura', 'numero_factura', 'serie',
+    'base_imponible', 'tipo_iva', 'cuota_iva', 'total_factura',
+    'retencion', 'tipo_retencion', 'recargo_equivalencia', 'tipo_req', 'cuota_req',
+    'concepto', 'descripcion', 'tipo_documento', 'archivo_url', 'notas',
+    'proveedor_id', 'cliente_id', 'irpf',
+    'moneda', 'forma_pago', 'fecha_vencimiento', 'pagada',
+  ]),
+  asientos: new Set([
+    'fecha', 'concepto', 'documento', 'notas', 'tipo',
+    'descripcion', 'referencia', 'periodo',
+  ]),
+  movimientos: new Set([
+    'fecha', 'descripcion', 'importe', 'tipo', 'categoria',
+    'cuenta_contable', 'referencia', 'notas', 'subcuenta', 'concepto',
+    'debe', 'haber',
+  ]),
 };
+
+const SYSTEM_COLS = new Set(['id', 'empresa_id', 'created_at', 'updated_at']);
 
 const SORTABLE_COLS = {
   facturas: new Set(['id', 'fecha_factura', 'numero_factura', 'total_factura', 'base_imponible', 'nombre_emisor', 'nombre_receptor', 'tipo_documento', 'estado', 'created_at']),
@@ -44,6 +62,23 @@ const SORTABLE_COLS = {
 const COL_RE = /^[a-z_][a-z0-9_]*$/i;
 function validCol(name) {
   return COL_RE.test(name);
+}
+
+function editableKeys(body, table) {
+  const wl = EDITABLE_COLS[table];
+  if (wl) return Object.keys(body).filter(k => wl.has(k));
+  return Object.keys(body).filter(k => validCol(k) && !SYSTEM_COLS.has(k));
+}
+
+function recalcFactura(body) {
+  if (body.base_imponible === undefined || body.tipo_iva === undefined) return;
+  const base = parseFloat(body.base_imponible);
+  const tipoIva = parseFloat(body.tipo_iva);
+  if (isNaN(base) || isNaN(tipoIva)) return;
+  body.cuota_iva = Math.round(base * tipoIva) / 100;
+  const retencion = parseFloat(body.retencion) || 0;
+  const cuotaReq = parseFloat(body.cuota_req) || 0;
+  body.total_factura = Math.round((base + body.cuota_iva - retencion + cuotaReq) * 100) / 100;
 }
 
 function mapRow(row) {
@@ -108,14 +143,16 @@ router.post('/:table', async (req, res) => {
     delete body.Id; delete body.id;
     delete body.nc_order; delete body.CreatedAt; delete body.UpdatedAt;
     delete body.created_at; delete body.updated_at;
-    body.empresa_id = req.user.empresa_id;
+    delete body.empresa_id;
 
-    const keys = Object.keys(body).filter(k => validCol(k) && !PROTECTED_COLS[table]?.has(k));
-    const values = keys.map((k) => body[k]);
-    const placeholders = keys.map((_, i) => `$${i + 1}`);
+    if (table === 'facturas') recalcFactura(body);
+    const keys = editableKeys(body, table);
+    const allKeys = ['empresa_id', ...keys];
+    const allValues = [req.user.empresa_id, ...keys.map(k => body[k])];
+    const placeholders = allKeys.map((_, i) => `$${i + 1}`);
 
-    const query = `INSERT INTO "${table}" (${keys.map((k) => `"${k}"`).join(', ')}) VALUES (${placeholders.join(', ')}) RETURNING *`;
-    const result = await pool.query(query, values);
+    const query = `INSERT INTO "${table}" (${allKeys.map((k) => `"${k}"`).join(', ')}) VALUES (${placeholders.join(', ')}) RETURNING *`;
+    const result = await pool.query(query, allValues);
     res.json(mapRow(result.rows[0]));
   } catch (err) {
     res.status(err.status || 500).json({ error: safeError(err) });
@@ -136,18 +173,34 @@ router.patch('/:table', async (req, res) => {
       return res.status(403).json({ error: 'Permiso insuficiente' });
     }
 
-    const rawId = req.body.Id || req.body.id;
-    const recordId = parseInt(rawId);
-    if (!Number.isInteger(recordId) || recordId <= 0) {
+    const rawId = String(req.body.Id || req.body.id || '');
+    if (!/^\d+$/.test(rawId)) {
+      return res.status(400).json({ error: 'Id requerido (entero positivo)' });
+    }
+    const recordId = parseInt(rawId, 10);
+    if (recordId <= 0) {
       return res.status(400).json({ error: 'Id requerido (entero positivo)' });
     }
 
-    const check = await pool.query(
-      `SELECT id FROM "${table}" WHERE id = $1 AND empresa_id = $2`,
-      [recordId, req.user.empresa_id]
-    );
-    if (check.rows.length === 0) {
-      return res.status(403).json({ error: 'Sin acceso a este registro' });
+    if (table === 'facturas') {
+      const fcheck = await pool.query(
+        'SELECT id, contabilizada FROM facturas WHERE id = $1 AND empresa_id = $2',
+        [recordId, req.user.empresa_id]
+      );
+      if (fcheck.rows.length === 0) {
+        return res.status(403).json({ error: 'Sin acceso a este registro' });
+      }
+      if (fcheck.rows[0].contabilizada) {
+        return res.status(409).json({ error: 'Factura contabilizada: no se puede modificar' });
+      }
+    } else {
+      const check = await pool.query(
+        `SELECT id FROM "${table}" WHERE id = $1 AND empresa_id = $2`,
+        [recordId, req.user.empresa_id]
+      );
+      if (check.rows.length === 0) {
+        return res.status(403).json({ error: 'Sin acceso a este registro' });
+      }
     }
 
     const body = { ...req.body };
@@ -162,7 +215,8 @@ router.patch('/:table', async (req, res) => {
       delete body.activo;
     }
 
-    const keys = Object.keys(body).filter(k => validCol(k) && !PROTECTED_COLS[table]?.has(k));
+    if (table === 'facturas') recalcFactura(body);
+    const keys = editableKeys(body, table);
     if (keys.length === 0) return res.status(400).json({ error: 'No hay campos que actualizar' });
 
     const values = keys.map((k) => body[k]);
@@ -207,8 +261,11 @@ router.delete('/:table/:id', async (req, res) => {
       return res.status(403).json({ error: 'Solo administradores pueden eliminar registros' });
     }
 
-    const deleteId = parseInt(req.params.id);
-    if (!Number.isInteger(deleteId) || deleteId <= 0) {
+    if (!/^\d+$/.test(req.params.id)) {
+      return res.status(400).json({ error: 'Id inválido' });
+    }
+    const deleteId = parseInt(req.params.id, 10);
+    if (deleteId <= 0) {
       return res.status(400).json({ error: 'Id inválido' });
     }
 

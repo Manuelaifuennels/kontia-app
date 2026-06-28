@@ -93,6 +93,7 @@ router.post('/:endpoint', async (req, res) => {
       }
       res.status(response.status)
         .set('Content-Type', contentType)
+        .set('Content-Disposition', 'attachment')
         .send(Buffer.from(buffer));
     } else {
       res.status(502).json({ error: 'Respuesta del webhook con tipo no permitido' });

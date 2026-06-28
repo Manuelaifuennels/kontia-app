@@ -10,32 +10,39 @@ const DUMMY_HASH = bcrypt.hashSync('kontia-dummy-never-matches-x7k9', 12);
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const NIF_CIF_RE = /^[A-Z]\d{7}[A-Z0-9]$|^\d{8}[A-Z]$|^[XYZ]\d{7}[A-Z]$/;
 
-const loginAttempts = new Map();
+const RATE_WINDOW = 15 * 60 * 1000;
+const loginRateMap = new Map();
+const registerRateMap = new Map();
+const accountLockMap = new Map();
 
 setInterval(() => {
   const now = Date.now();
-  const window = 15 * 60 * 1000;
-  for (const [ip, attempts] of loginAttempts) {
-    const recent = attempts.filter((t) => now - t < window);
-    if (recent.length === 0) loginAttempts.delete(ip);
-    else loginAttempts.set(ip, recent);
+  for (const store of [loginRateMap, registerRateMap, accountLockMap]) {
+    for (const [key, attempts] of store) {
+      const recent = attempts.filter(t => now - t < RATE_WINDOW);
+      if (recent.length === 0) store.delete(key);
+      else store.set(key, recent);
+    }
   }
 }, 5 * 60 * 1000).unref();
 
-function rateLimit(req, res, next) {
-  const ip = req.ip;
-  const now = Date.now();
-  const window = 15 * 60 * 1000;
-  const maxAttempts = 10;
-  const attempts = loginAttempts.get(ip) || [];
-  const recent = attempts.filter((t) => now - t < window);
-  if (recent.length >= maxAttempts) {
-    return res.status(429).json({ message: 'Demasiados intentos. Espera 15 minutos.' });
-  }
-  recent.push(now);
-  loginAttempts.set(ip, recent);
-  next();
+function makeRateLimit(store, max) {
+  return (req, res, next) => {
+    const ip = req.ip;
+    const now = Date.now();
+    const attempts = store.get(ip) || [];
+    const recent = attempts.filter(t => now - t < RATE_WINDOW);
+    if (recent.length >= max) {
+      return res.status(429).json({ message: 'Demasiados intentos. Espera 15 minutos.' });
+    }
+    recent.push(now);
+    store.set(ip, recent);
+    next();
+  };
 }
+
+const loginRateLimit = makeRateLimit(loginRateMap, 10);
+const registerRateLimit = makeRateLimit(registerRateMap, 5);
 
 async function getEmpresasForUser(userId) {
   const result = await pool.query(
@@ -49,11 +56,18 @@ async function getEmpresasForUser(userId) {
   return result.rows;
 }
 
-router.post('/login', rateLimit, async (req, res) => {
+router.post('/login', loginRateLimit, async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {
       return res.status(400).json({ message: 'Email y contraseña requeridos' });
+    }
+
+    const emailNorm = email.toLowerCase().trim();
+
+    const acctFails = (accountLockMap.get(emailNorm) || []).filter(t => Date.now() - t < RATE_WINDOW);
+    if (acctFails.length >= 5) {
+      return res.status(429).json({ message: 'Cuenta bloqueada temporalmente. Espera 15 minutos.' });
     }
 
     const result = await pool.query(
@@ -62,14 +76,18 @@ router.post('/login', rateLimit, async (req, res) => {
        FROM usuarios u
        JOIN empresas e ON e.id = u.empresa_id
        WHERE u.email = $1`,
-      [email.toLowerCase().trim()]
+      [emailNorm]
     );
 
     const user = result.rows[0];
     const valid = await bcrypt.compare(password, user?.password || DUMMY_HASH);
     if (!user || !valid || !user.activo) {
+      acctFails.push(Date.now());
+      accountLockMap.set(emailNorm, acctFails);
       return res.status(401).json({ message: 'Credenciales incorrectas' });
     }
+
+    accountLockMap.delete(emailNorm);
 
     await pool.query('UPDATE usuarios SET ultimo_login = NOW() WHERE id = $1', [user.id]);
 
@@ -95,7 +113,7 @@ router.post('/login', rateLimit, async (req, res) => {
   }
 });
 
-router.post('/register', rateLimit, async (req, res) => {
+router.post('/register', registerRateLimit, async (req, res) => {
   try {
     const { email, password, nombre, empresa_nombre, nif_empresa } = req.body;
     if (!email || !password || !nombre || !empresa_nombre) {
@@ -126,6 +144,14 @@ router.post('/register', rateLimit, async (req, res) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+
+      if (nifNorm) {
+        const nifCheck = await client.query('SELECT id FROM empresas WHERE nif = $1', [nifNorm]);
+        if (nifCheck.rows.length > 0) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({ message: 'Ya existe una empresa con este NIF/CIF' });
+        }
+      }
 
       const empresa = await client.query(
         'INSERT INTO empresas (nombre, nif) VALUES ($1, $2) RETURNING id',
@@ -238,17 +264,28 @@ router.post('/create-empresa', authMiddleware, async (req, res) => {
       return res.status(400).json({ message: 'Formato de NIF/CIF inválido' });
     }
 
-    const countResult = await pool.query(
-      'SELECT count(*)::int AS total FROM usuarios_empresas WHERE usuario_id = $1',
-      [req.user.id]
-    );
-    if (countResult.rows[0].total >= MAX_EMPRESAS_PER_USER) {
-      return res.status(400).json({ message: `Máximo ${MAX_EMPRESAS_PER_USER} empresas por usuario` });
-    }
-
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+
+      await client.query('SELECT pg_advisory_xact_lock($1)', [req.user.id]);
+
+      const countResult = await client.query(
+        'SELECT count(*)::int AS total FROM usuarios_empresas WHERE usuario_id = $1',
+        [req.user.id]
+      );
+      if (countResult.rows[0].total >= MAX_EMPRESAS_PER_USER) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ message: `Máximo ${MAX_EMPRESAS_PER_USER} empresas por usuario` });
+      }
+
+      if (nifNorm) {
+        const nifCheck = await client.query('SELECT id FROM empresas WHERE nif = $1', [nifNorm]);
+        if (nifCheck.rows.length > 0) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({ message: 'Ya existe una empresa con este NIF/CIF' });
+        }
+      }
 
       const empresa = await client.query(
         'INSERT INTO empresas (nombre, nif) VALUES ($1, $2) RETURNING id, nombre, nif',
