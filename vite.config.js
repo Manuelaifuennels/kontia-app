@@ -14,5 +14,6 @@ export default defineConfig({
   },
   build: {
     outDir: "dist",
+    modulePreload: { polyfill: false },
   },
 });
