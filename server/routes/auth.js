@@ -65,8 +65,9 @@ router.post('/login', loginRateLimit, async (req, res) => {
     }
 
     const emailNorm = email.toLowerCase().trim();
+    const lockKey = `${emailNorm}:${req.ip}`;
 
-    const acctFails = (accountLockMap.get(emailNorm) || []).filter(t => Date.now() - t < RATE_WINDOW);
+    const acctFails = (accountLockMap.get(lockKey) || []).filter(t => Date.now() - t < RATE_WINDOW);
     if (acctFails.length >= 5) {
       return res.status(429).json({ message: 'Cuenta bloqueada temporalmente. Espera 15 minutos.' });
     }
@@ -84,11 +85,11 @@ router.post('/login', loginRateLimit, async (req, res) => {
     const valid = await bcrypt.compare(password, user?.password || DUMMY_HASH);
     if (!user || !valid || !user.activo) {
       if (acctFails.length < 50) acctFails.push(Date.now());
-      accountLockMap.set(emailNorm, acctFails);
+      accountLockMap.set(lockKey, acctFails);
       return res.status(401).json({ message: 'Credenciales incorrectas' });
     }
 
-    accountLockMap.delete(emailNorm);
+    accountLockMap.delete(lockKey);
 
     await pool.query('UPDATE usuarios SET ultimo_login = NOW() WHERE id = $1', [user.id]);
 

@@ -45,7 +45,7 @@ const EDITABLE_COLS = {
     'tipo_documento', 'archivo_url', 'archivo_nombre',
     'proveedor_id', 'cliente_id',
     'metodo_pago', 'cuenta_gasto', 'cuenta_tercero',
-    'numero_asiento', 'confianza_ia', 'datos_raw',
+    'numero_asiento', 'confianza_ia',
   ]),
   asientos: new Set([
     'fecha', 'concepto', 'ejercicio_id', 'factura_id', 'numero',
@@ -55,7 +55,7 @@ const EDITABLE_COLS = {
     'cuenta_bancaria', 'conciliado', 'saldo', 'factura_id',
   ]),
   apuntes: new Set([
-    'asiento_id', 'cuenta', 'subcuenta', 'debe', 'haber', 'concepto',
+    'cuenta', 'subcuenta', 'debe', 'haber', 'concepto',
   ]),
 };
 
@@ -74,6 +74,7 @@ const PERIOD_TABLES = new Set(['asientos', 'movimientos']);
 const FISCAL_DATE_TABLES = new Set(['asientos', 'movimientos', 'facturas']);
 const CAN_CONTABILIZAR = new Set(['admin', 'contable']);
 const VALID_IVA = new Set([0, 4, 5, 10, 10.5, 12, 21]);
+const VALID_TIPO_DOCUMENTO = new Set(['recibida', 'emitida', 'rectificativa', 'intracomunitaria', 'importacion', 'exportacion']);
 const MAX_BASE = 1e9;
 const MAX_REQ = 10;
 const MAX_RETENCION = 60;
@@ -113,6 +114,10 @@ function recalcFactura(data) {
     return Number.isFinite(v) && v !== 0;
   });
 
+  if (hasMultiIva && Number.isFinite(parseFloat(data.base_imponible)) && parseFloat(data.base_imponible) > 0 && Number.isFinite(parseFloat(data.tipo_iva)) && parseFloat(data.tipo_iva) > 0) {
+    throw Object.assign(new Error('No envíes base_imponible+tipo_iva junto a bases por tramo (base_iva_X). Usa un modo u otro.'), { status: 400 });
+  }
+
   let totalBase = 0;
   let totalCuota = 0;
 
@@ -126,6 +131,8 @@ function recalcFactura(data) {
       totalBase += base;
       totalCuota += cuota;
     }
+    if (totalBase > MAX_BASE)
+      throw Object.assign(new Error('Suma de bases por tramo fuera de rango (máx 1.000.000.000)'), { status: 400 });
     data.base_imponible = Math.round(totalBase * 100) / 100;
     data.cuota_iva = Math.round(totalCuota * 100) / 100;
   } else {
@@ -313,10 +320,13 @@ router.post('/:table', async (req, res) => {
     delete body.created_at; delete body.updated_at;
     delete body.empresa_id;
 
-    if (table === 'apuntes' && body.asiento_id) {
+    if (table === 'apuntes') {
+      if (!body.asiento_id || !/^\d+$/.test(String(body.asiento_id))) {
+        return res.status(400).json({ error: 'asiento_id requerido (entero positivo)' });
+      }
       const asientoCheck = await pool.query(
         'SELECT id, fecha FROM asientos WHERE id = $1 AND empresa_id = $2',
-        [body.asiento_id, req.user.empresa_id]
+        [parseInt(body.asiento_id, 10), req.user.empresa_id]
       );
       if (asientoCheck.rows.length === 0) {
         return res.status(403).json({ error: 'Asiento no encontrado o sin acceso' });
@@ -340,6 +350,9 @@ router.post('/:table', async (req, res) => {
       delete body.contabilizada_por;
       delete body.contabilizada_at;
       delete body.fecha_contabilizacion;
+      if (body.tipo_documento && !VALID_TIPO_DOCUMENTO.has(body.tipo_documento)) {
+        return res.status(400).json({ error: 'tipo_documento no válido' });
+      }
       for (const col of COMPUTED_COLS.facturas) delete body[col];
       recalcFactura(body);
       computedApplied = true;
@@ -446,6 +459,9 @@ router.patch('/:table', async (req, res) => {
       delete body.contabilizada_por;
       delete body.contabilizada_at;
       delete body.fecha_contabilizacion;
+      if (body.tipo_documento && !VALID_TIPO_DOCUMENTO.has(body.tipo_documento)) {
+        return res.status(400).json({ error: 'tipo_documento no válido' });
+      }
     }
 
     if (table === 'config' && body.cif_empresa) {
