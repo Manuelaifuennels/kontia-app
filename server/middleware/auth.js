@@ -3,27 +3,36 @@ import pool from '../db.js';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
-const activoCache = new Map();
+const userCache = new Map();
 const CACHE_TTL = 30000;
 
-async function isUserActive(userId) {
-  const cached = activoCache.get(userId);
+async function validateUser(userId, empresaId) {
+  const key = `${userId}:${empresaId}`;
+  const cached = userCache.get(key);
   if (cached && Date.now() - cached.ts < CACHE_TTL) {
-    return cached.activo;
+    return cached;
   }
   const result = await pool.query(
-    'SELECT activo FROM usuarios WHERE id = $1',
-    [userId]
+    `SELECT u.activo, ue.rol
+     FROM usuarios u
+     LEFT JOIN usuarios_empresas ue ON ue.usuario_id = u.id AND ue.empresa_id = $2
+     WHERE u.id = $1`,
+    [userId, empresaId]
   );
-  const activo = result.rows.length > 0 && result.rows[0].activo === true;
-  activoCache.set(userId, { activo, ts: Date.now() });
-  return activo;
+  const row = result.rows[0];
+  const entry = {
+    activo: row ? row.activo === true : false,
+    rol: row?.rol || null,
+    ts: Date.now(),
+  };
+  userCache.set(key, entry);
+  return entry;
 }
 
 setInterval(() => {
   const now = Date.now();
-  for (const [id, entry] of activoCache) {
-    if (now - entry.ts > CACHE_TTL * 2) activoCache.delete(id);
+  for (const [key, entry] of userCache) {
+    if (now - entry.ts > CACHE_TTL * 2) userCache.delete(key);
   }
 }, 60000).unref();
 
@@ -35,7 +44,7 @@ export function signToken(user) {
       empresa_id: user.empresa_id,
       nombre: user.nombre,
       empresa_nombre: user.empresa_nombre,
-      rol: user.rol || "admin",
+      rol: user.rol || 'usuario',
     },
     JWT_SECRET,
     { expiresIn: '24h' }
@@ -44,9 +53,7 @@ export function signToken(user) {
 
 export async function authMiddleware(req, res, next) {
   const header = req.headers.authorization;
-  const token = header?.startsWith('Bearer ')
-    ? header.slice(7)
-    : req.cookies?.token;
+  const token = header?.startsWith('Bearer ') ? header.slice(7) : null;
 
   if (!token) {
     return res.status(401).json({ error: 'Token requerido' });
@@ -63,14 +70,17 @@ export async function authMiddleware(req, res, next) {
   }
 
   try {
-    const activo = await isUserActive(decoded.id);
+    const { activo, rol } = await validateUser(decoded.id, decoded.empresa_id);
     if (!activo) {
       return res.status(401).json({ error: 'Cuenta desactivada o eliminada' });
     }
+    if (!rol) {
+      return res.status(403).json({ error: 'Sin acceso a esta empresa' });
+    }
+    req.user = { ...decoded, rol };
   } catch {
     return res.status(503).json({ error: 'Servicio temporalmente no disponible' });
   }
 
-  req.user = decoded;
   next();
 }

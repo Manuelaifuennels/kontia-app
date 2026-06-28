@@ -12,10 +12,18 @@ const ALLOWED_TABLES = new Set([
 ]);
 
 const READONLY_TABLES = new Set(['historial']);
-
 const BLOCKED_CRUD = new Set(['usuarios']);
 
+const CAN_WRITE = new Set(['admin', 'editor', 'contable']);
+const CAN_DELETE = new Set(['admin']);
+
 const USUARIOS_SAFE_COLS = 'id, empresa_id, nombre, email, rol, activo, ultimo_login, created_at, updated_at';
+
+const PROTECTED_COLS = {
+  facturas: new Set(['estado', 'contabilizada', 'ejercicio_id', 'asiento_id']),
+  asientos: new Set(['descuadre', 'numero']),
+  movimientos: new Set(['conciliado']),
+};
 
 const SORTABLE_COLS = {
   facturas: new Set(['id', 'fecha_factura', 'numero_factura', 'total_factura', 'base_imponible', 'nombre_emisor', 'nombre_receptor', 'tipo_documento', 'estado', 'created_at']),
@@ -56,7 +64,9 @@ router.get('/:table', async (req, res) => {
       return res.status(400).json({ error: `Tabla desconocida: ${table}` });
     }
 
-    const { limit = 200, offset = 0, sort } = req.query;
+    const { sort } = req.query;
+    const limit = Math.min(Math.max(parseInt(req.query.limit) || 200, 1), 500);
+    const offset = Math.max(parseInt(req.query.offset) || 0, 0);
 
     let orderBy = 'id DESC';
     if (sort) {
@@ -70,7 +80,7 @@ router.get('/:table', async (req, res) => {
 
     const cols = table === 'usuarios' ? USUARIOS_SAFE_COLS : '*';
     const query = `SELECT ${cols} FROM "${table}" WHERE empresa_id = $1 ORDER BY ${orderBy} LIMIT $2 OFFSET $3`;
-    const result = await pool.query(query, [req.user.empresa_id, parseInt(limit), parseInt(offset)]);
+    const result = await pool.query(query, [req.user.empresa_id, limit, offset]);
     res.json({ list: result.rows.map(mapRow) });
   } catch (err) {
     res.status(500).json({ error: safeError(err) });
@@ -89,7 +99,7 @@ router.post('/:table', async (req, res) => {
     if (READONLY_TABLES.has(table)) {
       return res.status(403).json({ error: 'Tabla de solo lectura' });
     }
-    if (req.user.rol === 'viewer') {
+    if (!CAN_WRITE.has(req.user.rol)) {
       return res.status(403).json({ error: 'Permiso insuficiente' });
     }
 
@@ -99,7 +109,7 @@ router.post('/:table', async (req, res) => {
     delete body.created_at; delete body.updated_at;
     body.empresa_id = req.user.empresa_id;
 
-    const keys = Object.keys(body).filter(validCol);
+    const keys = Object.keys(body).filter(k => validCol(k) && !PROTECTED_COLS[table]?.has(k));
     const values = keys.map((k) => body[k]);
     const placeholders = keys.map((_, i) => `$${i + 1}`);
 
@@ -120,7 +130,7 @@ router.patch('/:table', async (req, res) => {
     if (READONLY_TABLES.has(table)) {
       return res.status(403).json({ error: 'Tabla de solo lectura' });
     }
-    if (req.user.rol === 'viewer') {
+    if (!CAN_WRITE.has(req.user.rol)) {
       return res.status(403).json({ error: 'Permiso insuficiente' });
     }
 
@@ -147,7 +157,7 @@ router.patch('/:table', async (req, res) => {
       delete body.activo;
     }
 
-    const keys = Object.keys(body).filter(validCol);
+    const keys = Object.keys(body).filter(k => validCol(k) && !PROTECTED_COLS[table]?.has(k));
     if (keys.length === 0) return res.status(400).json({ error: 'No hay campos que actualizar' });
 
     const values = keys.map((k) => body[k]);
@@ -164,7 +174,9 @@ router.patch('/:table', async (req, res) => {
           'UPDATE empresas SET nif = $1 WHERE id = $2',
           [body.cif_empresa.trim().toUpperCase(), req.user.empresa_id]
         );
-      } catch {}
+      } catch (err) {
+        console.error('Error syncing empresa NIF:', err.message);
+      }
     }
 
     res.json(mapRow(result.rows[0]));
@@ -185,7 +197,7 @@ router.delete('/:table/:id', async (req, res) => {
     if (READONLY_TABLES.has(table)) {
       return res.status(403).json({ error: 'Tabla de solo lectura' });
     }
-    if (req.user.rol !== 'admin') {
+    if (!CAN_DELETE.has(req.user.rol)) {
       return res.status(403).json({ error: 'Solo administradores pueden eliminar registros' });
     }
 

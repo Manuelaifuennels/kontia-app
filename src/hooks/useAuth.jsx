@@ -28,9 +28,10 @@ function loadStoredUser() {
 }
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(() => loadStoredUser().user);
-  const [token, setToken] = useState(() => loadStoredUser().token);
-  const [empresas, setEmpresas] = useState(() => loadStoredUser().empresas);
+  const [initial] = useState(loadStoredUser);
+  const [user, setUser] = useState(initial.user);
+  const [token, setToken] = useState(initial.token);
+  const [empresas, setEmpresas] = useState(initial.empresas);
 
   const login = (userData, authToken, empresasList) => {
     setUser(userData);

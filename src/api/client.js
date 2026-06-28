@@ -12,10 +12,11 @@ async function apiFetch(path, opts = {}) {
   const res = await fetch(`/api${path}`, { ...opts, headers });
 
   if (res.status === 401 && !path.startsWith("/auth/")) {
+    const hadToken = localStorage.getItem(TOKEN_KEY);
     localStorage.removeItem("kontia_user");
     localStorage.removeItem("kontia_token");
     localStorage.removeItem("kontia_empresas");
-    window.location.reload();
+    if (hadToken) window.location.reload();
     throw new Error("Sesión expirada");
   }
 

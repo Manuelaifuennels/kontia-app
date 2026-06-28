@@ -22,6 +22,19 @@ const SAFE_CONTENT_TYPES = [
   'text/plain',
 ];
 
+const webhookCalls = new Map();
+const WEBHOOK_LIMIT = 20;
+const WEBHOOK_WINDOW = 15 * 60 * 1000;
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [uid, calls] of webhookCalls) {
+    const recent = calls.filter(t => now - t < WEBHOOK_WINDOW);
+    if (recent.length === 0) webhookCalls.delete(uid);
+    else webhookCalls.set(uid, recent);
+  }
+}, 5 * 60 * 1000).unref();
+
 router.post('/:endpoint', async (req, res) => {
   try {
     const { endpoint } = req.params;
@@ -29,6 +42,15 @@ router.post('/:endpoint', async (req, res) => {
     if (!ALLOWED_ENDPOINTS.includes(endpoint)) {
       return res.status(400).json({ error: `Endpoint no permitido: ${endpoint}` });
     }
+
+    const uid = req.user.id;
+    const now = Date.now();
+    const calls = (webhookCalls.get(uid) || []).filter(t => now - t < WEBHOOK_WINDOW);
+    if (calls.length >= WEBHOOK_LIMIT) {
+      return res.status(429).json({ error: 'Demasiadas solicitudes. Espera unos minutos.' });
+    }
+    calls.push(now);
+    webhookCalls.set(uid, calls);
 
     const body = { ...req.body, empresa_id: req.user.empresa_id };
 

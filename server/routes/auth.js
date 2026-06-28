@@ -5,6 +5,8 @@ import { authMiddleware, signToken } from '../middleware/auth.js';
 
 const router = Router();
 
+const DUMMY_HASH = bcrypt.hashSync('kontia-dummy-never-matches-x7k9', 12);
+
 const loginAttempts = new Map();
 
 setInterval(() => {
@@ -33,19 +35,15 @@ function rateLimit(req, res, next) {
 }
 
 async function getEmpresasForUser(userId) {
-  try {
-    const result = await pool.query(
-      `SELECT e.id AS empresa_id, e.nombre AS empresa_nombre, e.nif, ue.rol
-       FROM usuarios_empresas ue
-       JOIN empresas e ON e.id = ue.empresa_id
-       WHERE ue.usuario_id = $1
-       ORDER BY ue.created_at ASC`,
-      [userId]
-    );
-    return result.rows;
-  } catch {
-    return [];
-  }
+  const result = await pool.query(
+    `SELECT e.id AS empresa_id, e.nombre AS empresa_nombre, e.nif, ue.rol
+     FROM usuarios_empresas ue
+     JOIN empresas e ON e.id = ue.empresa_id
+     WHERE ue.usuario_id = $1
+     ORDER BY ue.created_at ASC`,
+    [userId]
+  );
+  return result.rows;
 }
 
 router.post('/login', rateLimit, async (req, res) => {
@@ -64,29 +62,19 @@ router.post('/login', rateLimit, async (req, res) => {
       [email.toLowerCase().trim()]
     );
 
-    if (result.rows.length === 0) {
-      return res.status(401).json({ message: 'Credenciales incorrectas' });
-    }
-
     const user = result.rows[0];
-
-    if (!user.activo) {
-      return res.status(401).json({ message: 'Cuenta desactivada' });
-    }
-
-    const valid = await bcrypt.compare(password, user.password);
-    if (!valid) {
+    const valid = await bcrypt.compare(password, user?.password || DUMMY_HASH);
+    if (!user || !valid || !user.activo) {
       return res.status(401).json({ message: 'Credenciales incorrectas' });
     }
 
     await pool.query('UPDATE usuarios SET ultimo_login = NOW() WHERE id = $1', [user.id]);
 
-    let empresas = await getEmpresasForUser(user.id);
-    if (empresas.length === 0) {
-      empresas = [{ empresa_id: user.empresa_id, empresa_nombre: user.empresa_nombre, nif: null, rol: user.rol || 'admin' }];
-    }
+    const empresas = await getEmpresasForUser(user.id);
 
-    const activeEmpresa = empresas[0];
+    const activeEmpresa = empresas.length > 0
+      ? empresas[0]
+      : { empresa_id: user.empresa_id, empresa_nombre: user.empresa_nombre, nif: null, rol: user.rol || 'usuario' };
 
     const payload = {
       id: user.id,
@@ -98,7 +86,7 @@ router.post('/login', rateLimit, async (req, res) => {
     };
 
     const token = signToken(payload);
-    res.json({ token, user: payload, empresas });
+    res.json({ token, user: payload, empresas: empresas.length > 0 ? empresas : [activeEmpresa] });
   } catch (err) {
     res.status(500).json({ message: 'Error en login' });
   }
@@ -187,9 +175,9 @@ router.post('/register', rateLimit, async (req, res) => {
 
 router.post('/switch-empresa', authMiddleware, async (req, res) => {
   try {
-    const { empresa_id } = req.body;
-    if (!empresa_id) {
-      return res.status(400).json({ message: 'empresa_id requerido' });
+    const eid = parseInt(req.body.empresa_id);
+    if (!Number.isInteger(eid) || eid <= 0) {
+      return res.status(400).json({ message: 'empresa_id inválido' });
     }
 
     const access = await pool.query(
@@ -197,7 +185,7 @@ router.post('/switch-empresa', authMiddleware, async (req, res) => {
        FROM usuarios_empresas ue
        JOIN empresas e ON e.id = ue.empresa_id
        WHERE ue.usuario_id = $1 AND ue.empresa_id = $2`,
-      [req.user.id, empresa_id]
+      [req.user.id, eid]
     );
 
     if (access.rows.length === 0) {
@@ -210,7 +198,7 @@ router.post('/switch-empresa', authMiddleware, async (req, res) => {
       id: req.user.id,
       email: req.user.email,
       nombre: req.user.nombre,
-      empresa_id: parseInt(empresa_id),
+      empresa_id: eid,
       empresa_nombre,
       rol,
     };
@@ -269,7 +257,7 @@ router.get('/me', authMiddleware, async (req, res) => {
   try {
     const empresas = await getEmpresasForUser(req.user.id);
     res.json({ user: req.user, empresas });
-  } catch (err) {
+  } catch {
     res.json({ user: req.user, empresas: [] });
   }
 });

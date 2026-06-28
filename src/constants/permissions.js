@@ -38,6 +38,6 @@ export const PERMISSIONS = {
 };
 
 export function can(user, permission) {
-  const r = user?.rol || "admin";
+  const r = user?.rol || "usuario";
   return (PERMISSIONS[r] || PERMISSIONS.usuario)[permission] || false;
 }
