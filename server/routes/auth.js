@@ -6,11 +6,22 @@ import { authMiddleware, signToken } from '../middleware/auth.js';
 const router = Router();
 
 const loginAttempts = new Map();
+
+setInterval(() => {
+  const now = Date.now();
+  const window = 15 * 60 * 1000;
+  for (const [ip, attempts] of loginAttempts) {
+    const recent = attempts.filter((t) => now - t < window);
+    if (recent.length === 0) loginAttempts.delete(ip);
+    else loginAttempts.set(ip, recent);
+  }
+}, 5 * 60 * 1000).unref();
+
 function rateLimit(req, res, next) {
   const ip = req.ip;
   const now = Date.now();
   const window = 15 * 60 * 1000;
-  const maxAttempts = 20;
+  const maxAttempts = 10;
   const attempts = loginAttempts.get(ip) || [];
   const recent = attempts.filter((t) => now - t < window);
   if (recent.length >= maxAttempts) {
@@ -100,6 +111,10 @@ router.post('/register', rateLimit, async (req, res) => {
       return res.status(400).json({ message: 'Todos los campos son obligatorios' });
     }
 
+    if (password.length < 8) {
+      return res.status(400).json({ message: 'La contraseña debe tener al menos 8 caracteres' });
+    }
+
     const exists = await pool.query(
       'SELECT id FROM usuarios WHERE email = $1',
       [email.toLowerCase().trim()]
@@ -118,7 +133,7 @@ router.post('/register', rateLimit, async (req, res) => {
       );
       const empresaId = empresa.rows[0].id;
 
-      const hash = await bcrypt.hash(password, 10);
+      const hash = await bcrypt.hash(password, 12);
 
       const usuario = await client.query(
         `INSERT INTO usuarios (empresa_id, nombre, email, password, rol, activo)
@@ -127,19 +142,19 @@ router.post('/register', rateLimit, async (req, res) => {
       );
       const userId = usuario.rows[0].id;
 
-      try {
-        await client.query(
-          `INSERT INTO usuarios_empresas (usuario_id, empresa_id, rol) VALUES ($1, $2, 'admin')`,
-          [userId, empresaId]
-        );
-      } catch {}
+      await client.query(
+        `INSERT INTO usuarios_empresas (usuario_id, empresa_id, rol)
+         VALUES ($1, $2, 'admin')
+         ON CONFLICT (usuario_id, empresa_id) DO NOTHING`,
+        [userId, empresaId]
+      );
 
-      try {
-        await client.query(
-          `INSERT INTO config (empresa_id, cif_empresa, nombre_empresa) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
-          [empresaId, (nif_empresa || '').trim().toUpperCase() || null, empresa_nombre]
-        );
-      } catch {}
+      await client.query(
+        `INSERT INTO config (empresa_id, cif_empresa, nombre_empresa)
+         VALUES ($1, $2, $3)
+         ON CONFLICT DO NOTHING`,
+        [empresaId, (nif_empresa || '').trim().toUpperCase() || null, empresa_nombre]
+      );
 
       await client.query('COMMIT');
 
@@ -224,12 +239,14 @@ router.post('/create-empresa', authMiddleware, async (req, res) => {
       );
 
       await client.query(
-        `INSERT INTO usuarios_empresas (usuario_id, empresa_id, rol) VALUES ($1, $2, 'admin')`,
+        `INSERT INTO usuarios_empresas (usuario_id, empresa_id, rol)
+         VALUES ($1, $2, 'admin')`,
         [req.user.id, empresa.rows[0].id]
       );
 
       await client.query(
-        `INSERT INTO config (empresa_id, cif_empresa, nombre_empresa) VALUES ($1, $2, $3)`,
+        `INSERT INTO config (empresa_id, cif_empresa, nombre_empresa)
+         VALUES ($1, $2, $3)`,
         [empresa.rows[0].id, empresa.rows[0].nif, nombre.trim()]
       );
 

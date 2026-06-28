@@ -109,7 +109,7 @@ export default function Login() {
               value={form.password}
               onChange={set("password")}
               required
-              minLength={6}
+              minLength={8}
               className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-500"
             />
 

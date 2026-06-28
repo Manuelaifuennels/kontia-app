@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import pool from '../db.js';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
@@ -13,11 +14,11 @@ export function signToken(user) {
       rol: user.rol || "admin",
     },
     JWT_SECRET,
-    { expiresIn: '7d' }
+    { expiresIn: '24h' }
   );
 }
 
-export function authMiddleware(req, res, next) {
+export async function authMiddleware(req, res, next) {
   const header = req.headers.authorization;
   const token = header?.startsWith('Bearer ')
     ? header.slice(7)
@@ -28,9 +29,22 @@ export function authMiddleware(req, res, next) {
   }
 
   try {
-    req.user = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, JWT_SECRET);
+
+    const check = await pool.query(
+      'SELECT activo FROM usuarios WHERE id = $1',
+      [decoded.id]
+    );
+    if (check.rows.length === 0 || !check.rows[0].activo) {
+      return res.status(401).json({ error: 'Cuenta desactivada o eliminada' });
+    }
+
+    req.user = decoded;
     next();
-  } catch {
-    return res.status(401).json({ error: 'Token inválido o expirado' });
+  } catch (err) {
+    if (err.name === 'TokenExpiredError') {
+      return res.status(401).json({ error: 'Sesión expirada' });
+    }
+    return res.status(401).json({ error: 'Token inválido' });
   }
 }

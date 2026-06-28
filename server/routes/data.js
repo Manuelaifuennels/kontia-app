@@ -11,6 +11,28 @@ const ALLOWED_TABLES = new Set([
   'config', 'emisor', 'historial', 'actividades', 'maestro',
 ]);
 
+const READONLY_TABLES = new Set(['historial']);
+
+const BLOCKED_CRUD = new Set(['usuarios']);
+
+const USUARIOS_SAFE_COLS = 'id, empresa_id, nombre, email, rol, activo, ultimo_login, created_at, updated_at';
+
+const SORTABLE_COLS = {
+  facturas: new Set(['id', 'fecha_factura', 'numero_factura', 'total_factura', 'base_imponible', 'nombre_emisor', 'nombre_receptor', 'tipo_documento', 'estado', 'created_at']),
+  proveedores: new Set(['id', 'nombre_proveedor', 'nif_proveedor', 'created_at']),
+  clientes: new Set(['id', 'nombre', 'nif', 'created_at']),
+  asientos: new Set(['id', 'numero', 'fecha', 'created_at']),
+  movimientos: new Set(['id', 'fecha', 'importe', 'created_at']),
+  maestro: new Set(['id', 'subcuenta', 'descripcion', 'tipo']),
+  ejercicios: new Set(['id', 'anio', 'estado']),
+  config: new Set(['id']),
+  emisor: new Set(['id']),
+  reglas: new Set(['id', 'created_at']),
+  usuarios: new Set(['id', 'nombre', 'email', 'rol', 'ultimo_login', 'created_at']),
+  historial: new Set(['id', 'fecha_envio', 'destinatario', 'estado', 'created_at']),
+  actividades: new Set(['id', 'nombre_actividad', 'created_at']),
+};
+
 const COL_RE = /^[a-z_][a-z0-9_]*$/i;
 function validCol(name) {
   return COL_RE.test(name);
@@ -40,12 +62,13 @@ router.get('/:table', async (req, res) => {
     if (sort) {
       const desc = sort.startsWith('-');
       const col = desc ? sort.slice(1) : sort;
-      if (validCol(col)) {
+      const allowed = SORTABLE_COLS[table];
+      if (allowed && allowed.has(col)) {
         orderBy = `"${col}" ${desc ? 'DESC' : 'ASC'} NULLS LAST`;
       }
     }
 
-    const cols = table === 'usuarios' ? 'id, empresa_id, nombre, email, rol, activo, ultimo_login, created_at, updated_at' : '*';
+    const cols = table === 'usuarios' ? USUARIOS_SAFE_COLS : '*';
     const query = `SELECT ${cols} FROM "${table}" WHERE empresa_id = $1 ORDER BY ${orderBy} LIMIT $2 OFFSET $3`;
     const result = await pool.query(query, [req.user.empresa_id, parseInt(limit), parseInt(offset)]);
     res.json({ list: result.rows.map(mapRow) });
@@ -59,6 +82,15 @@ router.post('/:table', async (req, res) => {
     const table = req.params.table;
     if (!ALLOWED_TABLES.has(table)) {
       return res.status(400).json({ error: `Tabla desconocida: ${table}` });
+    }
+    if (BLOCKED_CRUD.has(table)) {
+      return res.status(403).json({ error: 'Usa /api/auth para gestionar usuarios' });
+    }
+    if (READONLY_TABLES.has(table)) {
+      return res.status(403).json({ error: 'Tabla de solo lectura' });
+    }
+    if (req.user.rol === 'viewer') {
+      return res.status(403).json({ error: 'Permiso insuficiente' });
     }
 
     const body = { ...req.body };
@@ -85,6 +117,12 @@ router.patch('/:table', async (req, res) => {
     if (!ALLOWED_TABLES.has(table)) {
       return res.status(400).json({ error: `Tabla desconocida: ${table}` });
     }
+    if (READONLY_TABLES.has(table)) {
+      return res.status(403).json({ error: 'Tabla de solo lectura' });
+    }
+    if (req.user.rol === 'viewer') {
+      return res.status(403).json({ error: 'Permiso insuficiente' });
+    }
 
     const recordId = req.body.Id || req.body.id;
     if (!recordId) return res.status(400).json({ error: 'Id requerido' });
@@ -103,6 +141,12 @@ router.patch('/:table', async (req, res) => {
     delete body.created_at; delete body.updated_at;
     delete body.empresa_id;
 
+    if (table === 'usuarios') {
+      delete body.password;
+      delete body.rol;
+      delete body.activo;
+    }
+
     const keys = Object.keys(body).filter(validCol);
     if (keys.length === 0) return res.status(400).json({ error: 'No hay campos que actualizar' });
 
@@ -110,7 +154,8 @@ router.patch('/:table', async (req, res) => {
     const setClause = keys.map((k, i) => `"${k}" = $${i + 1}`).join(', ');
     values.push(recordId, req.user.empresa_id);
 
-    const query = `UPDATE "${table}" SET ${setClause} WHERE id = $${keys.length + 1} AND empresa_id = $${keys.length + 2} RETURNING *`;
+    const returning = table === 'usuarios' ? USUARIOS_SAFE_COLS : '*';
+    const query = `UPDATE "${table}" SET ${setClause} WHERE id = $${keys.length + 1} AND empresa_id = $${keys.length + 2} RETURNING ${returning}`;
     const result = await pool.query(query, values);
 
     if (table === 'config' && body.cif_empresa) {
@@ -133,6 +178,15 @@ router.delete('/:table/:id', async (req, res) => {
     const table = req.params.table;
     if (!ALLOWED_TABLES.has(table)) {
       return res.status(400).json({ error: `Tabla desconocida: ${table}` });
+    }
+    if (BLOCKED_CRUD.has(table)) {
+      return res.status(403).json({ error: 'Usa /api/auth para gestionar usuarios' });
+    }
+    if (READONLY_TABLES.has(table)) {
+      return res.status(403).json({ error: 'Tabla de solo lectura' });
+    }
+    if (req.user.rol !== 'admin') {
+      return res.status(403).json({ error: 'Solo administradores pueden eliminar registros' });
     }
 
     const result = await pool.query(
