@@ -387,6 +387,18 @@ router.post('/facturas/:id/contabilizar', async (req, res) => {
         apuntes.push({ cuenta: cuentaTercero, debe: terceroImporte, haber: 0, concepto });
       }
 
+      const totalDebe = apuntes.reduce((s, a) => s + a.debe, 0);
+      const totalHaber = apuntes.reduce((s, a) => s + a.haber, 0);
+      if (apuntes.length < 2 || terceroImporte <= 0 ||
+          Math.round(totalDebe * 100) === 0 || Math.round(totalHaber * 100) === 0) {
+        await client.query('ROLLBACK');
+        return res.status(422).json({ error: 'Factura sin movimiento contable: no se puede contabilizar (importe 0 o asiento incompleto).' });
+      }
+      if (Math.round(Math.abs(totalDebe - totalHaber) * 100) !== 0) {
+        await client.query('ROLLBACK');
+        return res.status(422).json({ error: 'Asiento descuadrado tras el cálculo. Revisa los importes de la factura.' });
+      }
+
       for (const ap of apuntes) {
         await client.query(
           'INSERT INTO apuntes (asiento_id, cuenta, debe, haber, concepto) VALUES ($1,$2,$3,$4,$5)',
