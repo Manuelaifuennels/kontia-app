@@ -1,11 +1,14 @@
 import React, { useState, useMemo, useRef, useEffect } from "react";
 import PGC, { PGC_GRUPOS } from "../../constants/pgc";
+import api from "../../api/client";
 
 export default function CuentaContableSelector({ value, onChange, label, filterGrupos }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [selectedGrupo, setSelectedGrupo] = useState(null);
+  const [maestro, setMaestro] = useState([]);
   const ref = useRef(null);
+  const fetched = useRef(false);
 
   useEffect(() => {
     function handleClick(e) {
@@ -15,21 +18,72 @@ export default function CuentaContableSelector({ value, onChange, label, filterG
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
-  const cuentas = useMemo(() => {
-    let list = PGC;
-    if (filterGrupos) list = list.filter((c) => filterGrupos.includes(c.grupo));
-    if (selectedGrupo) list = list.filter((c) => c.grupo === selectedGrupo);
+  const fetchMaestro = () => {
+    api.listRecords("maestro")
+      .then((data) => {
+        const list = Array.isArray(data) ? data : data?.list || [];
+        setMaestro(list);
+      })
+      .catch(() => {});
+  };
+
+  useEffect(() => {
+    if (fetched.current) return;
+    fetched.current = true;
+    fetchMaestro();
+  }, []);
+
+  useEffect(() => {
+    const handler = () => fetchMaestro();
+    window.addEventListener("maestro-updated", handler);
+    return () => window.removeEventListener("maestro-updated", handler);
+  }, []);
+
+  const allCuentas = useMemo(() => {
+    const customMapped = maestro.map((m) => ({
+      codigo: String(m.subcuenta || ""),
+      nombre: m.descripcion || "",
+      grupo: parseInt(String(m.subcuenta || "0")[0], 10) || 0,
+      tipo: m.tipo,
+      isCustom: true,
+    }));
+
+    let pgcList = PGC;
+    let customList = customMapped;
+
+    if (filterGrupos) {
+      pgcList = pgcList.filter((c) => filterGrupos.includes(c.grupo));
+      customList = customList.filter((c) => filterGrupos.includes(c.grupo));
+    }
+    if (selectedGrupo) {
+      pgcList = pgcList.filter((c) => c.grupo === selectedGrupo);
+      customList = customList.filter((c) => c.grupo === selectedGrupo);
+    }
+
+    const merged = [
+      ...pgcList.map((c) => ({ ...c, isCustom: false })),
+      ...customList,
+    ].sort((a, b) => a.codigo.localeCompare(b.codigo));
+
     if (search) {
       const q = search.toLowerCase();
-      list = list.filter(
+      return merged.filter(
         (c) => c.codigo.includes(q) || c.nombre.toLowerCase().includes(q)
       );
     }
-    return list;
-  }, [search, selectedGrupo, filterGrupos]);
+    return merged;
+  }, [search, selectedGrupo, filterGrupos, maestro]);
 
-  const selected = value ? PGC.find((c) => c.codigo === value) : null;
-  const displayValue = selected ? `${selected.codigo} - ${selected.nombre}` : "";
+  const selected = useMemo(() => {
+    if (!value) return null;
+    const fromPGC = PGC.find((c) => c.codigo === value);
+    if (fromPGC) return fromPGC;
+    const fromMaestro = maestro.find((m) => String(m.subcuenta || "") === value);
+    if (fromMaestro) return { codigo: fromMaestro.subcuenta, nombre: fromMaestro.descripcion };
+    return null;
+  }, [value, maestro]);
+
+  const displayValue = selected ? `${selected.codigo} - ${selected.nombre}` : value || "";
 
   const grupos = filterGrupos
     ? PGC_GRUPOS.filter((g) => filterGrupos.includes(g.grupo))
@@ -87,22 +141,27 @@ export default function CuentaContableSelector({ value, onChange, label, filterG
               ))}
             </div>
             <div className="overflow-y-auto flex-1">
-              {cuentas.length === 0 && (
+              {allCuentas.length === 0 && (
                 <div className="px-3 py-4 text-center text-xs text-slate-400">Sin resultados</div>
               )}
-              {cuentas.map((c) => {
+              {allCuentas.map((c, i) => {
                 const isSubgroup = c.codigo.length === 2;
                 return (
                   <button
-                    key={c.codigo}
+                    key={`${c.codigo}-${c.isCustom ? "c" : "p"}-${i}`}
                     type="button"
                     onClick={() => { onChange(c.codigo); setOpen(false); setSearch(""); }}
                     className={`w-full text-left px-3 py-1.5 text-xs hover:bg-teal-50 transition-colors flex items-center gap-2 ${
                       value === c.codigo ? "bg-teal-50 text-teal-700" : ""
-                    } ${isSubgroup ? "font-semibold text-slate-700 bg-slate-50/50" : "text-slate-600"}`}
+                    } ${c.isCustom ? "bg-teal-50/30" : isSubgroup ? "font-semibold text-slate-700 bg-slate-50/50" : "text-slate-600"}`}
                   >
-                    <span className="font-mono text-teal-600 w-10 shrink-0">{c.codigo}</span>
-                    <span className="truncate">{c.nombre}</span>
+                    <span className={`font-mono w-12 shrink-0 ${c.isCustom ? "text-teal-700 font-semibold" : "text-teal-600"}`}>
+                      {c.codigo}
+                    </span>
+                    <span className="truncate flex-1">{c.nombre}</span>
+                    {c.isCustom && (
+                      <span className="text-[9px] bg-teal-100 text-teal-600 px-1.5 py-0.5 rounded-full shrink-0">custom</span>
+                    )}
                   </button>
                 );
               })}

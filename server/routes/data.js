@@ -11,7 +11,7 @@ const ALLOWED_TABLES = new Set([
   'config', 'emisor', 'historial', 'actividades', 'maestro',
 ]);
 
-const READONLY_TABLES = new Set(['historial']);
+const READONLY_TABLES = new Set(['historial', 'asientos', 'apuntes']);
 const BLOCKED_CRUD = new Set(['usuarios']);
 
 const CAN_WRITE = new Set(['admin', 'editor', 'contable']);
@@ -46,6 +46,7 @@ const EDITABLE_COLS = {
     'proveedor_id', 'cliente_id',
     'metodo_pago', 'cuenta_gasto', 'cuenta_tercero',
     'numero_asiento', 'confianza_ia',
+    'estado', 'eliminada',
   ]),
   asientos: new Set([
     'fecha', 'concepto', 'ejercicio_id', 'factura_id', 'numero',
@@ -55,7 +56,7 @@ const EDITABLE_COLS = {
     'cuenta_bancaria', 'conciliado', 'saldo', 'factura_id',
   ]),
   apuntes: new Set([
-    'cuenta', 'subcuenta', 'debe', 'haber', 'concepto',
+    'cuenta', 'debe', 'haber', 'concepto',
   ]),
 };
 
@@ -74,7 +75,8 @@ const PERIOD_TABLES = new Set(['asientos', 'movimientos']);
 const FISCAL_DATE_TABLES = new Set(['asientos', 'movimientos', 'facturas']);
 const CAN_CONTABILIZAR = new Set(['admin', 'contable']);
 const VALID_IVA = new Set([0, 4, 5, 10, 10.5, 12, 21]);
-const VALID_TIPO_DOCUMENTO = new Set(['recibida', 'emitida', 'rectificativa', 'intracomunitaria', 'importacion', 'exportacion']);
+const VALID_TIPO_DOCUMENTO = new Set(['recibida', 'emitida', 'rectificativa', 'intracomunitaria', 'importacion', 'exportacion', 'compra', 'venta']);
+const VALID_ESTADO = new Set(['procesando', 'pendiente', 'error', 'duplicada']);
 const MAX_BASE = 1e9;
 const MAX_REQ = 10;
 const MAX_RETENCION = 60;
@@ -93,7 +95,7 @@ const SORTABLE_COLS = {
   usuarios: new Set(['id', 'nombre', 'email', 'rol', 'ultimo_login', 'created_at']),
   historial: new Set(['id', 'fecha_envio', 'destinatario', 'estado', 'created_at']),
   actividades: new Set(['id', 'nombre_actividad', 'created_at']),
-  apuntes: new Set(['id', 'asiento_id', 'cuenta', 'subcuenta', 'debe', 'haber']),
+  apuntes: new Set(['id', 'asiento_id', 'cuenta', 'debe', 'haber']),
 };
 
 const COL_RE = /^[a-z_][a-z0-9_]*$/i;
@@ -229,39 +231,200 @@ router.post('/facturas/:id/contabilizar', async (req, res) => {
     if (!hasAnyBase && (!Number.isFinite(base) || !Number.isFinite(tipoIva))) {
       return res.status(400).json({ error: 'Factura incompleta: falta base_imponible o tipo_iva' });
     }
+    if (!hasAnyBase && base <= 0) {
+      return res.status(400).json({ error: 'Factura sin importe: base_imponible debe ser mayor que 0' });
+    }
 
     recalcFactura(row);
 
-    const setCols = [`estado = 'contabilizada'`];
-    const setVals = [];
-    let p = 1;
-
-    for (const col of COMPUTED_COLS.facturas) {
-      if (row[col] !== undefined) {
-        setCols.push(`"${col}" = $${p++}`);
-        setVals.push(row[col]);
+    const isIntracomunitaria = row.tipo_documento === 'intracomunitaria';
+    let isCompra;
+    if (row.tipo_documento === 'rectificativa' || isIntracomunitaria) {
+      if (row.proveedor_id) {
+        isCompra = true;
+      } else if (row.cliente_id) {
+        isCompra = false;
+      } else if (isIntracomunitaria && row.cuenta_gasto && String(row.cuenta_gasto)[0] === '7') {
+        isCompra = false;
+      } else {
+        isCompra = true;
       }
-    }
-    setCols.push(`"base_imponible" = $${p++}`);
-    setVals.push(row.base_imponible);
-    setCols.push(`contabilizada_por = $${p++}`);
-    setVals.push(req.user.id);
-    setCols.push(`contabilizada_at = NOW()`);
-    setCols.push(`fecha_contabilizacion = NOW()::date`);
-
-    setVals.push(facturaId, req.user.empresa_id);
-
-    const result = await pool.query(
-      `UPDATE facturas SET ${setCols.join(', ')}
-       WHERE id = $${p} AND empresa_id = $${p + 1} AND estado != 'contabilizada' RETURNING *`,
-      setVals
-    );
-
-    if (result.rowCount === 0) {
-      return res.status(409).json({ error: 'Factura ya contabilizada' });
+    } else {
+      isCompra = row.tipo_documento === 'compra' || row.tipo_documento === 'recibida'
+        || row.tipo_documento === 'importacion' || !row.tipo_documento;
     }
 
-    res.json(mapRow(result.rows[0]));
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const anio = new Date(row.fecha_factura).getFullYear();
+      const currentYear = new Date().getFullYear();
+      if (!anio || anio < 2000 || anio > currentYear + 1) {
+        await client.query('ROLLBACK');
+        return res.status(422).json({ error: `Año ${anio} fuera de rango válido (2000–${currentYear + 1}). Revisa fecha_factura.` });
+      }
+      let ejercicioId;
+      const ejR = await client.query(
+        'SELECT id, estado, bloqueado FROM ejercicios WHERE empresa_id = $1 AND anio = $2',
+        [req.user.empresa_id, anio]
+      );
+      if (ejR.rows.length > 0) {
+        if (ejR.rows[0].bloqueado || ejR.rows[0].estado === 'cerrado') {
+          await client.query('ROLLBACK');
+          return res.status(409).json({ error: 'Ejercicio bloqueado' });
+        }
+        ejercicioId = ejR.rows[0].id;
+      } else {
+        const newEj = await client.query(
+          'INSERT INTO ejercicios (empresa_id, anio, estado) VALUES ($1, $2, $3) RETURNING id',
+          [req.user.empresa_id, anio, 'abierto']
+        );
+        ejercicioId = newEj.rows[0].id;
+      }
+
+      await client.query('SELECT pg_advisory_xact_lock($1, $2)', [1, req.user.empresa_id]);
+      const numR = await client.query(
+        'SELECT COALESCE(MAX(numero), 0) + 1 AS n FROM asientos WHERE empresa_id = $1 AND ejercicio_id = $2',
+        [req.user.empresa_id, ejercicioId]
+      );
+      const nextNum = numR.rows[0].n;
+
+      let cuentaGasto = row.cuenta_gasto || (isCompra ? '629' : '705');
+      let cuentaTercero = isCompra ? '400' : '430';
+
+      if (isCompra && (row.nombre_emisor || row.nif_emisor)) {
+        const prov = await client.query(
+          `SELECT cuenta_proveedor, cuenta_gasto FROM proveedores
+           WHERE empresa_id = $1 AND (nombre_proveedor = $2 OR nif_proveedor = $3) LIMIT 1`,
+          [req.user.empresa_id, row.nombre_emisor || '', row.nif_emisor || '']
+        );
+        if (prov.rows.length > 0) {
+          if (prov.rows[0].cuenta_proveedor) cuentaTercero = prov.rows[0].cuenta_proveedor;
+          if (!row.cuenta_gasto && prov.rows[0].cuenta_gasto) cuentaGasto = prov.rows[0].cuenta_gasto;
+        }
+      } else if (!isCompra && (row.nombre_receptor || row.nif_receptor)) {
+        const cli = await client.query(
+          `SELECT cuenta_cliente, cuenta_ingresos FROM clientes
+           WHERE empresa_id = $1 AND (nombre = $2 OR nif = $3) LIMIT 1`,
+          [req.user.empresa_id, row.nombre_receptor || '', row.nif_receptor || '']
+        );
+        if (cli.rows.length > 0) {
+          if (cli.rows[0].cuenta_cliente) cuentaTercero = cli.rows[0].cuenta_cliente;
+          if (!row.cuenta_gasto && cli.rows[0].cuenta_ingresos) cuentaGasto = cli.rows[0].cuenta_ingresos;
+        }
+      }
+
+      const emisorNom = isCompra ? (row.nombre_emisor || '') : (row.nombre_receptor || row.nombre_emisor || '');
+      const concepto = `${row.numero_factura || 'S/N'} ${emisorNom}`.trim();
+
+      const asientoR = await client.query(
+        `INSERT INTO asientos (empresa_id, ejercicio_id, numero, fecha, concepto, factura_id)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+        [req.user.empresa_id, ejercicioId, nextNum, row.fecha_factura, concepto, facturaId]
+      );
+      const asientoId = asientoR.rows[0].id;
+
+      const apuntes = [];
+
+      for (const bracket of IVA_BRACKETS) {
+        const bv = parseFloat(row[bracket.base]) || 0;
+        const cv = parseFloat(row[bracket.cuota]) || 0;
+        if (bv <= 0) continue;
+        const pct = bracket.rate > 0 ? ` ${parseFloat((bracket.rate * 100).toFixed(2))}%` : '';
+        if (isCompra) {
+          apuntes.push({ cuenta: cuentaGasto, debe: bv, haber: 0, concepto: `Gasto${pct}` });
+          if (cv > 0) apuntes.push({ cuenta: '472', debe: cv, haber: 0, concepto: `IVA sop.${pct}` });
+        } else {
+          apuntes.push({ cuenta: cuentaGasto, debe: 0, haber: bv, concepto: `Ingreso${pct}` });
+          if (cv > 0) apuntes.push({ cuenta: '477', debe: 0, haber: cv, concepto: `IVA rep.${pct}` });
+        }
+      }
+
+      if (apuntes.length === 0 && Number.isFinite(base) && base > 0) {
+        const cuotaIva = parseFloat(row.cuota_iva) || 0;
+        if (isCompra) {
+          apuntes.push({ cuenta: cuentaGasto, debe: base, haber: 0, concepto: 'Gasto' });
+          if (cuotaIva > 0) apuntes.push({ cuenta: '472', debe: cuotaIva, haber: 0, concepto: `IVA sop. ${tipoIva}%` });
+        } else {
+          apuntes.push({ cuenta: cuentaGasto, debe: 0, haber: base, concepto: 'Ingreso' });
+          if (cuotaIva > 0) apuntes.push({ cuenta: '477', debe: 0, haber: cuotaIva, concepto: `IVA rep. ${tipoIva}%` });
+        }
+      }
+
+      if (isIntracomunitaria && isCompra) {
+        let autorepIva = 0;
+        for (const bracket of IVA_BRACKETS) {
+          const cv = parseFloat(row[bracket.cuota]) || 0;
+          if (cv > 0) autorepIva += cv;
+        }
+        if (autorepIva === 0) autorepIva = parseFloat(row.cuota_iva) || 0;
+        if (autorepIva > 0) {
+          apuntes.push({ cuenta: '477', debe: 0, haber: autorepIva, concepto: 'IVA rep. (autorrepercusión intracom.)' });
+        }
+      }
+
+      const reqCuota = parseFloat(row.cuota_req) || 0;
+      if (reqCuota > 0 && isCompra) {
+        apuntes.push({ cuenta: '472', debe: reqCuota, haber: 0, concepto: `Rec. equiv. ${row.pct_req || ''}%` });
+      }
+
+      const retCuota = parseFloat(row.cuota_retencion) || 0;
+      if (retCuota > 0) {
+        if (isCompra) {
+          apuntes.push({ cuenta: '4751', debe: 0, haber: retCuota, concepto: `IRPF ${row.pct_retencion || ''}%` });
+        } else {
+          apuntes.push({ cuenta: '473', debe: retCuota, haber: 0, concepto: `IRPF ${row.pct_retencion || ''}%` });
+        }
+      }
+
+      const sumDebe = apuntes.reduce((s, a) => s + a.debe, 0);
+      const sumHaber = apuntes.reduce((s, a) => s + a.haber, 0);
+      const terceroImporte = Math.round(Math.abs(sumDebe - sumHaber) * 100) / 100;
+      if (isCompra) {
+        apuntes.push({ cuenta: cuentaTercero, debe: 0, haber: terceroImporte, concepto });
+      } else {
+        apuntes.push({ cuenta: cuentaTercero, debe: terceroImporte, haber: 0, concepto });
+      }
+
+      for (const ap of apuntes) {
+        await client.query(
+          'INSERT INTO apuntes (asiento_id, cuenta, debe, haber, concepto) VALUES ($1,$2,$3,$4,$5)',
+          [asientoId, ap.cuenta, ap.debe, ap.haber, ap.concepto]
+        );
+      }
+
+      const setCols = [`estado = 'contabilizada'`];
+      const setVals = [];
+      let p = 1;
+      for (const col of COMPUTED_COLS.facturas) {
+        if (row[col] !== undefined) { setCols.push(`"${col}" = $${p++}`); setVals.push(row[col]); }
+      }
+      setCols.push(`"base_imponible" = $${p++}`); setVals.push(row.base_imponible);
+      setCols.push(`contabilizada_por = $${p++}`); setVals.push(req.user.id);
+      setCols.push(`contabilizada_at = NOW()`);
+      setCols.push(`fecha_contabilizacion = NOW()::date`);
+      setCols.push(`"numero_asiento" = $${p++}`); setVals.push(nextNum);
+      setVals.push(facturaId, req.user.empresa_id);
+
+      const facturaResult = await client.query(
+        `UPDATE facturas SET ${setCols.join(', ')}
+         WHERE id = $${p} AND empresa_id = $${p + 1} AND estado != 'contabilizada' RETURNING *`,
+        setVals
+      );
+      if (facturaResult.rowCount === 0) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'Factura ya contabilizada (concurrencia)' });
+      }
+
+      await client.query('COMMIT');
+      res.json({ ...mapRow(facturaResult.rows[0]), asiento: { id: asientoId, numero: nextNum, apuntes } });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   } catch (err) {
     res.status(err.status || 500).json({ error: safeError(err) });
   }
@@ -454,8 +617,22 @@ router.patch('/:table', async (req, res) => {
     }
 
     if (table === 'facturas') {
-      delete body.estado;
-      delete body.eliminada;
+      if (body.estado) {
+        if (!CAN_CONTABILIZAR.has(liveWrite.rol) || body.estado === 'contabilizada' || !VALID_ESTADO.has(body.estado)) {
+          delete body.estado;
+        }
+      } else {
+        delete body.estado;
+      }
+      if (body.eliminada === true || body.eliminada === 'true') {
+        if (CAN_DELETE.has(liveWrite.rol)) {
+          body.eliminada = true;
+        } else {
+          delete body.eliminada;
+        }
+      } else {
+        delete body.eliminada;
+      }
       delete body.contabilizada_por;
       delete body.contabilizada_at;
       delete body.fecha_contabilizacion;
@@ -482,7 +659,7 @@ router.patch('/:table', async (req, res) => {
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
-        await client.query('SELECT pg_advisory_xact_lock($1)', [recordId]);
+        await client.query('SELECT pg_advisory_xact_lock($1, $2)', [2, recordId]);
 
         const descuadrados = await client.query(
           `SELECT a.id, a.numero,

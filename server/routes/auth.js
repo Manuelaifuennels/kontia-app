@@ -283,7 +283,7 @@ router.post('/create-empresa', authMiddleware, async (req, res) => {
     try {
       await client.query('BEGIN');
 
-      await client.query('SELECT pg_advisory_xact_lock($1)', [req.user.id]);
+      await client.query('SELECT pg_advisory_xact_lock($1, $2)', [3, req.user.id]);
 
       const countResult = await client.query(
         'SELECT count(*)::int AS total FROM usuarios_empresas WHERE usuario_id = $1',

@@ -22,8 +22,8 @@ export default function Dashboard() {
 
   const kpis = useMemo(() => {
     const total = active.reduce((s, f) => s + (parseFloat(f.total_factura || f.total) || 0), 0);
-    const contabilizadas = active.filter((f) => f.estado === "completada" || f.estado === "contabilizada").length;
-    const pendientes = active.filter((f) => f.estado !== "completada" && f.estado !== "contabilizada").length;
+    const contabilizadas = active.filter((f) => f.estado === "contabilizada").length;
+    const pendientes = active.filter((f) => f.estado !== "contabilizada").length;
     const errores = active.filter((f) => f.estado === "error").length;
     return { total, contabilizadas, pendientes, errores };
   }, [active]);

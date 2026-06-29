@@ -16,10 +16,10 @@ import SubirDocs from "./SubirDocs";
 const TABS = [
   { key: "all", label: "Todos" },
   { key: "procesando", label: "En proceso" },
+  { key: "pendiente", label: "Pendientes" },
   { key: "error", label: "Errores" },
-  { key: "revision", label: "Pendiente" },
-  { key: "contabilizando", label: "Contabilizando" },
-  { key: "completada", label: "Contabilizados" },
+  { key: "duplicada", label: "Duplicadas" },
+  { key: "contabilizada", label: "Contabilizados" },
 ];
 
 function cellValue(col, f) {
@@ -108,7 +108,6 @@ export default function Contabilidad() {
 
   const filtered = useMemo(() => {
     if (filtro === "all") return facActivas;
-    if (filtro === "completada") return facActivas.filter((f) => f.estado === "completada" || f.estado === "contabilizada");
     return facActivas.filter((f) => f.estado === filtro);
   }, [facActivas, filtro]);
 
@@ -126,12 +125,21 @@ export default function Contabilidad() {
   async function doMasivo(action) {
     const ids = Object.keys(sel).filter((k) => sel[k]).map(Number);
     if (!ids.length) return toast("Selecciona facturas", "warning");
+    let ok = 0, fail = 0;
     for (const id of ids) {
-      if (action === "papelera") await api.updateRecord("facturas", { Id: id, eliminada: true });
-      else await api.updateRecord("facturas", { Id: id, estado: action });
+      try {
+        if (action === "papelera") {
+          await api.updateRecord("facturas", { Id: id, eliminada: true });
+        } else if (action === "contabilizar") {
+          await api.post(`/data/facturas/${id}/contabilizar`);
+        } else {
+          await api.updateRecord("facturas", { Id: id, estado: action });
+        }
+        ok++;
+      } catch { fail++; }
     }
     setSel({});
-    toast(`${ids.length} facturas actualizadas`, "success");
+    toast(`${ok} facturas actualizadas${fail ? `, ${fail} con error` : ""}`, ok > 0 ? "success" : "error");
     loadFacturas();
   }
 
@@ -155,7 +163,7 @@ export default function Contabilidad() {
       cuenta_gasto: inv.cuenta_gasto || "",
       metodo_pago: inv.metodo_pago || "",
       tipo_documento: inv.tipo_documento || "compra",
-      estado: inv.estado || "revision",
+      estado: inv.estado || "pendiente",
     });
     setEditing(true);
   }
@@ -222,9 +230,9 @@ export default function Contabilidad() {
               className="px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white cursor-pointer"
             >
               <option value="">Acciones</option>
-              {can(user, "contabilizar") && <option value="completada">Contabilizar</option>}
-              {can(user, "edit") && <option value="pendiente">Marcar pendiente</option>}
-              {can(user, "edit") && <option value="error">Marcar error</option>}
+              {can(user, "contabilizar") && <option value="contabilizar">Contabilizar</option>}
+              {can(user, "contabilizar") && <option value="pendiente">Marcar pendiente</option>}
+              {can(user, "contabilizar") && <option value="error">Marcar error</option>}
               {can(user, "delete") && <option value="papelera">Mover a papelera</option>}
             </select>
           )}
@@ -236,7 +244,7 @@ export default function Contabilidad() {
         {TABS.map((tab) => {
           const cnt = tab.key === "all"
             ? facActivas.length
-            : facActivas.filter((f) => f.estado === tab.key || (tab.key === "completada" && f.estado === "contabilizada")).length;
+            : facActivas.filter((f) => f.estado === tab.key).length;
           return (
             <button
               key={tab.key}
@@ -317,12 +325,20 @@ export default function Contabilidad() {
               {(detailInvoice.archivo_nombre || detailInvoice.archivo_url || "").match(/\.(jpg|jpeg|png|gif)$/i) ? (
                 <img src={detailInvoice.archivo_url} alt="Factura" className="max-w-full max-h-72 rounded-lg border border-slate-200 mx-auto" />
               ) : (
-                <iframe
-                  src={detailInvoice.archivo_url}
-                  title="Factura PDF"
+                <object
+                  data={detailInvoice.archivo_url}
+                  type="application/pdf"
                   className="w-full rounded-lg border border-slate-200"
                   style={{ height: "400px" }}
-                />
+                >
+                  <div className="flex flex-col items-center justify-center h-[400px] bg-slate-50 rounded-lg border border-slate-200 text-slate-500 text-sm">
+                    <Icon name="file" size={32} className="mb-2 opacity-50" />
+                    <p className="mb-2">No se puede previsualizar el PDF</p>
+                    <a href={detailInvoice.archivo_url} target="_blank" rel="noreferrer" className="text-teal-600 underline hover:text-teal-700">
+                      Abrir en nueva pestaña
+                    </a>
+                  </div>
+                </object>
               )}
             </div>
           )}
@@ -350,10 +366,16 @@ export default function Contabilidad() {
               <Field label="% Retención IRPF" value={editForm.pct_retencion} onChange={(v) => editField("pct_retencion", v)} />
               <Field label="Cuota retención" value={editForm.cuota_retencion} onChange={(v) => editField("cuota_retencion", v)} />
               <Field label="Total factura" value={editForm.total_factura} onChange={(v) => editField("total_factura", v)} />
-              <CuentaContableSelector label="Cuenta gasto (PGC)" value={editForm.cuenta_gasto} onChange={(v) => editField("cuenta_gasto", v)} filterGrupos={[6]} />
+              <CuentaContableSelector label="Cuenta contable (PGC)" value={editForm.cuenta_gasto} onChange={(v) => editField("cuenta_gasto", v)} filterGrupos={
+                (editForm.tipo_documento === 'rectificativa' || editForm.tipo_documento === 'intracomunitaria')
+                  ? (editForm.proveedor_id ? [6] : editForm.cliente_id ? [7] : [6, 7])
+                  : (editForm.tipo_documento === 'venta' || editForm.tipo_documento === 'emitida' || editForm.tipo_documento === 'exportacion')
+                    ? [7]
+                    : [6]
+              } />
               <Field label="Método pago" value={editForm.metodo_pago} onChange={(v) => editField("metodo_pago", v)} />
-              <Field label="Tipo documento" value={editForm.tipo_documento} onChange={(v) => editField("tipo_documento", v)} options={[{ value: "compra", label: "Compra" }, { value: "venta", label: "Venta" }]} />
-              <Field label="Estado" value={editForm.estado} onChange={(v) => editField("estado", v)} options={[{ value: "revision", label: "Pendiente" }, { value: "procesando", label: "En proceso" }, { value: "error", label: "Error" }, { value: "completada", label: "Contabilizada" }]} />
+              <Field label="Tipo documento" value={editForm.tipo_documento} onChange={(v) => editField("tipo_documento", v)} options={[{ value: "compra", label: "Compra" }, { value: "venta", label: "Venta" }, { value: "rectificativa", label: "Rectificativa" }, { value: "intracomunitaria", label: "Intracomunitaria" }]} />
+              <Field label="Estado" value={editForm.estado} onChange={(v) => editField("estado", v)} options={[{ value: "pendiente", label: "Pendiente" }, { value: "procesando", label: "En proceso" }, { value: "error", label: "Error" }, { value: "duplicada", label: "Duplicada" }]} />
               <div className="col-span-2 flex gap-2 justify-end mt-2">
                 <Button variant="secondary" onClick={() => setEditing(false)}>Cancelar</Button>
                 <Button onClick={saveEdit} disabled={editSaving}>{editSaving ? "Guardando..." : "Guardar cambios"}</Button>
@@ -385,6 +407,18 @@ export default function Contabilidad() {
                 ))}
               </div>
               <div className="mt-4 flex gap-2 justify-center">
+                {can(user, "contabilizar") && detailInvoice.estado !== "contabilizada" && (
+                  <Button onClick={async () => {
+                    try {
+                      await api.post(`/data/facturas/${detailInvoice.Id}/contabilizar`);
+                      toast("Factura contabilizada", "success");
+                      setDetailInvoice(null);
+                      loadFacturas();
+                    } catch (err) { toast(err.message, "error"); }
+                  }}>
+                    <Icon name="check" size={14} /> Contabilizar
+                  </Button>
+                )}
                 {can(user, "edit") && (
                   <Button variant="secondary" onClick={() => startEdit(detailInvoice)}>
                     <Icon name="edit" size={14} /> Editar
