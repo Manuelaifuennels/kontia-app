@@ -1,30 +1,40 @@
--- Fix: trigger_audit_log() fallaba en tabla apuntes porque no tiene columna empresa_id.
--- Ahora deriva empresa_id desde asientos.empresa_id via asiento_id cuando TG_TABLE_NAME = 'apuntes'.
--- Idempotente (CREATE OR REPLACE), seguro ejecutar aunque la DB en vivo ya lo tenga.
+-- server/migrations/006_fix_trigger_audit_log_apuntes.sql
+--
+-- Fix N21-DB-01: trigger_audit_log() fallaba en la tabla `apuntes` porque
+-- no tiene columna empresa_id. Ahora deriva empresa_id desde asientos vía
+-- asiento_id (leído del jsonb de la fila) cuando TG_TABLE_NAME = 'apuntes'.
+--
+-- IMPORTANTE: columnas reales de audit_log → accion, datos_antes, datos_despues
+-- (NO 'operacion'/'datos'). Idempotente (CREATE OR REPLACE).
 
-CREATE OR REPLACE FUNCTION trigger_audit_log()
-RETURNS TRIGGER AS $$
+CREATE OR REPLACE FUNCTION public.trigger_audit_log()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $function$
 DECLARE
-  v_empresa_id INTEGER;
+  v_empresa_id integer;
+  v_new jsonb := CASE WHEN TG_OP <> 'DELETE' THEN to_jsonb(NEW) ELSE NULL END;
+  v_old jsonb := CASE WHEN TG_OP <> 'INSERT' THEN to_jsonb(OLD) ELSE NULL END;
+  v_row jsonb := COALESCE(v_new, v_old);
 BEGIN
-  IF TG_OP = 'DELETE' THEN
-    IF TG_TABLE_NAME = 'apuntes' THEN
-      SELECT empresa_id INTO v_empresa_id FROM asientos WHERE id = OLD.asiento_id;
-    ELSE
-      v_empresa_id := OLD.empresa_id;
-    END IF;
-    INSERT INTO audit_log(tabla, operacion, registro_id, empresa_id, datos)
-    VALUES (TG_TABLE_NAME, TG_OP, OLD.id, v_empresa_id, to_jsonb(OLD));
-    RETURN OLD;
+  IF TG_TABLE_NAME = 'apuntes' THEN
+    SELECT s.empresa_id INTO v_empresa_id
+      FROM asientos s WHERE s.id = (v_row->>'asiento_id')::integer;
   ELSE
-    IF TG_TABLE_NAME = 'apuntes' THEN
-      SELECT empresa_id INTO v_empresa_id FROM asientos WHERE id = NEW.asiento_id;
-    ELSE
-      v_empresa_id := NEW.empresa_id;
-    END IF;
-    INSERT INTO audit_log(tabla, operacion, registro_id, empresa_id, datos)
-    VALUES (TG_TABLE_NAME, TG_OP, NEW.id, v_empresa_id, to_jsonb(NEW));
-    RETURN NEW;
+    v_empresa_id := (v_row->>'empresa_id')::integer;
   END IF;
+
+  IF TG_OP = 'INSERT' THEN
+    INSERT INTO audit_log(empresa_id, tabla, registro_id, accion, datos_despues)
+    VALUES (v_empresa_id, TG_TABLE_NAME, (v_row->>'id')::integer, 'INSERT', v_new);
+  ELSIF TG_OP = 'UPDATE' THEN
+    INSERT INTO audit_log(empresa_id, tabla, registro_id, accion, datos_antes, datos_despues)
+    VALUES (v_empresa_id, TG_TABLE_NAME, (v_row->>'id')::integer, 'UPDATE', v_old, v_new);
+  ELSIF TG_OP = 'DELETE' THEN
+    INSERT INTO audit_log(empresa_id, tabla, registro_id, accion, datos_antes)
+    VALUES (v_empresa_id, TG_TABLE_NAME, (v_row->>'id')::integer, 'DELETE', v_old);
+  END IF;
+
+  RETURN COALESCE(NEW, OLD);
 END;
-$$ LANGUAGE plpgsql;
+$function$;
