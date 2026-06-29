@@ -381,16 +381,18 @@ router.post('/facturas/:id/contabilizar', async (req, res) => {
       const sumDebe = apuntes.reduce((s, a) => s + a.debe, 0);
       const sumHaber = apuntes.reduce((s, a) => s + a.haber, 0);
       const terceroImporte = Math.round(Math.abs(sumDebe - sumHaber) * 100) / 100;
-      if (isCompra) {
-        apuntes.push({ cuenta: cuentaTercero, debe: 0, haber: terceroImporte, concepto });
-      } else {
-        apuntes.push({ cuenta: cuentaTercero, debe: terceroImporte, haber: 0, concepto });
+      if (terceroImporte > 0) {
+        if (isCompra) {
+          apuntes.push({ cuenta: cuentaTercero, debe: 0, haber: terceroImporte, concepto });
+        } else {
+          apuntes.push({ cuenta: cuentaTercero, debe: terceroImporte, haber: 0, concepto });
+        }
       }
 
       const totalDebe = apuntes.reduce((s, a) => s + a.debe, 0);
       const totalHaber = apuntes.reduce((s, a) => s + a.haber, 0);
-      if (apuntes.length < 2 || terceroImporte <= 0 ||
-          Math.round(totalDebe * 100) === 0 || Math.round(totalHaber * 100) === 0) {
+      if (apuntes.length < 2 ||
+          (Math.round(totalDebe * 100) === 0 && Math.round(totalHaber * 100) === 0)) {
         await client.query('ROLLBACK');
         return res.status(422).json({ error: 'Factura sin movimiento contable: no se puede contabilizar (importe 0 o asiento incompleto).' });
       }
