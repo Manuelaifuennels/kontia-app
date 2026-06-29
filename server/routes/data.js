@@ -58,6 +58,9 @@ const EDITABLE_COLS = {
   apuntes: new Set([
     'cuenta', 'debe', 'haber', 'concepto',
   ]),
+  ejercicios: new Set([
+    'estado', 'bloqueado', 'fecha_cierre', 'fecha_inicio', 'fecha_fin',
+  ]),
 };
 
 const SYSTEM_COLS = new Set(['id', 'empresa_id', 'created_at', 'updated_at']);
@@ -266,7 +269,7 @@ router.post('/facturas/:id/contabilizar', async (req, res) => {
       }
       let ejercicioId;
       const ejR = await client.query(
-        'SELECT id, estado, bloqueado FROM ejercicios WHERE empresa_id = $1 AND anio = $2',
+        'SELECT id, estado, bloqueado FROM ejercicios WHERE empresa_id = $1 AND anio = $2 FOR SHARE',
         [req.user.empresa_id, anio]
       );
       if (ejR.rows.length > 0) {
@@ -440,6 +443,9 @@ router.post('/facturas/:id/contabilizar', async (req, res) => {
       client.release();
     }
   } catch (err) {
+    if (err.code === '23514') {
+      return res.status(409).json({ error: 'Ejercicio cerrado o bloqueado: no se puede contabilizar' });
+    }
     res.status(err.status || 500).json({ error: safeError(err) });
   }
 });
@@ -663,10 +669,12 @@ router.patch('/:table', async (req, res) => {
     }
 
     if (table === 'ejercicios' && (body.estado === 'cerrado' || body.bloqueado === true)) {
+      if (body.estado === 'cerrado') delete body.fecha_cierre;
       const cierreKeys = editableKeys(body, table);
       if (cierreKeys.length === 0) return res.status(400).json({ error: 'No hay campos que actualizar' });
       const cierreValues = cierreKeys.map(k => body[k]);
-      const cierreSet = cierreKeys.map((k, i) => `"${k}" = $${i + 1}`).join(', ');
+      let cierreSet = cierreKeys.map((k, i) => `"${k}" = $${i + 1}`).join(', ');
+      if (body.estado === 'cerrado') cierreSet += ', "fecha_cierre" = NOW()';
       cierreValues.push(recordId, req.user.empresa_id);
       const cierreQuery = `UPDATE ejercicios SET ${cierreSet} WHERE id = $${cierreKeys.length + 1} AND empresa_id = $${cierreKeys.length + 2} RETURNING *`;
 
