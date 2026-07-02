@@ -11,15 +11,15 @@ export const PERMISSIONS = {
   editor: {
     upload: true,
     edit: true,
-    delete: true,
+    delete: false,
     contabilizar: false,
     export: true,
     ajustes: false,
     usuarios: false,
   },
   contable: {
-    upload: false,
-    edit: false,
+    upload: true,
+    edit: true,
     delete: false,
     contabilizar: true,
     export: true,

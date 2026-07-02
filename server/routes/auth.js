@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import pool from '../db.js';
-import { authMiddleware, signToken, invalidateUserCache } from '../middleware/auth.js';
+import { authMiddleware, signToken, invalidateUserCache, validateUser } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -342,6 +342,146 @@ router.get('/me', authMiddleware, async (req, res) => {
     res.json({ user: req.user, empresas });
   } catch {
     res.json({ user: req.user, empresas: [] });
+  }
+});
+
+// ── Gestión de usuarios de la empresa (solo admin) ──────────────────────────
+
+const VALID_ROLES = new Set(['admin', 'editor', 'contable', 'usuario']);
+
+async function requireAdmin(req, res) {
+  const live = await validateUser(req.user.id, req.user.empresa_id, { live: true });
+  if (!live.activo || live.rol !== 'admin') {
+    res.status(403).json({ message: 'Solo un administrador puede gestionar usuarios' });
+    return false;
+  }
+  return true;
+}
+
+router.post('/users', authMiddleware, async (req, res) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+
+    const { nombre, email, password, rol } = req.body;
+    if (!nombre || !email || !password) {
+      return res.status(400).json({ message: 'Nombre, email y contraseña son obligatorios' });
+    }
+    if (!EMAIL_RE.test(email.trim())) {
+      return res.status(400).json({ message: 'Formato de email inválido' });
+    }
+    if (password.length < 8) {
+      return res.status(400).json({ message: 'La contraseña debe tener al menos 8 caracteres' });
+    }
+    const rolNorm = VALID_ROLES.has(rol) ? rol : 'usuario';
+    const emailNorm = email.toLowerCase().trim();
+
+    const exists = await pool.query('SELECT id FROM usuarios WHERE email = $1', [emailNorm]);
+    if (exists.rows.length > 0) {
+      return res.status(400).json({ message: 'Este email ya está registrado' });
+    }
+
+    const hash = await bcrypt.hash(password, 12);
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const nuevo = await client.query(
+        `INSERT INTO usuarios (empresa_id, nombre, email, password, rol, activo)
+         VALUES ($1, $2, $3, $4, $5, true)
+         RETURNING id, empresa_id, nombre, email, rol, activo, ultimo_login, created_at, updated_at`,
+        [req.user.empresa_id, nombre.trim(), emailNorm, hash, rolNorm]
+      );
+      await client.query(
+        `INSERT INTO usuarios_empresas (usuario_id, empresa_id, rol)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (usuario_id, empresa_id) DO NOTHING`,
+        [nuevo.rows[0].id, req.user.empresa_id, rolNorm]
+      );
+      await client.query('COMMIT');
+      res.json({ user: nuevo.rows[0] });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    if (err.code === '23505') {
+      return res.status(400).json({ message: 'Este email ya está registrado' });
+    }
+    res.status(500).json({ message: 'Error al crear usuario' });
+  }
+});
+
+router.patch('/users/:id/rol', authMiddleware, async (req, res) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+
+    if (!/^\d+$/.test(req.params.id)) {
+      return res.status(400).json({ message: 'Id inválido' });
+    }
+    const targetId = parseInt(req.params.id, 10);
+    const { rol } = req.body;
+    if (!VALID_ROLES.has(rol)) {
+      return res.status(400).json({ message: 'Rol no válido' });
+    }
+
+    const member = await pool.query(
+      'SELECT id FROM usuarios_empresas WHERE usuario_id = $1 AND empresa_id = $2',
+      [targetId, req.user.empresa_id]
+    );
+    if (member.rows.length === 0) {
+      return res.status(404).json({ message: 'Usuario no encontrado en esta empresa' });
+    }
+
+    if (targetId === req.user.id && rol !== 'admin') {
+      const otherAdmins = await pool.query(
+        `SELECT count(*)::int AS n FROM usuarios_empresas
+         WHERE empresa_id = $1 AND rol = 'admin' AND usuario_id != $2`,
+        [req.user.empresa_id, req.user.id]
+      );
+      if (otherAdmins.rows[0].n === 0) {
+        return res.status(400).json({ message: 'No puedes quitarte el rol de admin: eres el único administrador' });
+      }
+    }
+
+    await pool.query(
+      'UPDATE usuarios_empresas SET rol = $1 WHERE usuario_id = $2 AND empresa_id = $3',
+      [rol, targetId, req.user.empresa_id]
+    );
+    invalidateUserCache(targetId, req.user.empresa_id);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ message: 'Error al actualizar rol' });
+  }
+});
+
+router.patch('/users/:id/activo', authMiddleware, async (req, res) => {
+  try {
+    if (!(await requireAdmin(req, res))) return;
+
+    if (!/^\d+$/.test(req.params.id)) {
+      return res.status(400).json({ message: 'Id inválido' });
+    }
+    const targetId = parseInt(req.params.id, 10);
+    if (targetId === req.user.id) {
+      return res.status(400).json({ message: 'No puedes desactivar tu propia cuenta' });
+    }
+    const activo = req.body.activo === true || req.body.activo === 'true';
+
+    const member = await pool.query(
+      'SELECT id FROM usuarios_empresas WHERE usuario_id = $1 AND empresa_id = $2',
+      [targetId, req.user.empresa_id]
+    );
+    if (member.rows.length === 0) {
+      return res.status(404).json({ message: 'Usuario no encontrado en esta empresa' });
+    }
+
+    // usuarios.activo es global: desactivar aquí bloquea el acceso del usuario a todas sus empresas
+    await pool.query('UPDATE usuarios SET activo = $1 WHERE id = $2', [activo, targetId]);
+    invalidateUserCache(targetId);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ message: 'Error al actualizar usuario' });
   }
 });
 

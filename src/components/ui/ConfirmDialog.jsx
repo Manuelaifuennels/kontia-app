@@ -22,8 +22,11 @@ export default function ConfirmDialog({
           variant={variant}
           size="sm"
           onClick={() => {
-            onConfirm();
-            onClose();
+            try {
+              onConfirm();
+            } finally {
+              onClose();
+            }
           }}
         >
           {confirmText}

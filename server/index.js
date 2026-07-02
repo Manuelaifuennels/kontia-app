@@ -71,9 +71,20 @@ if (isProd) {
 
 pool.query('SELECT 1').then(() => {
   console.log('PostgreSQL connected');
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
     console.log(`Kontia server running on port ${PORT}`);
   });
+
+  // Easypanel/Docker envía SIGTERM en cada redeploy: drenar conexiones antes de salir
+  const shutdown = (signal) => {
+    console.log(`${signal} received, shutting down gracefully`);
+    server.close(() => {
+      pool.end().finally(() => process.exit(0));
+    });
+    setTimeout(() => process.exit(1), 10000).unref();
+  };
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 }).catch((err) => {
   console.error('PostgreSQL connection failed:', err.message);
   process.exit(1);

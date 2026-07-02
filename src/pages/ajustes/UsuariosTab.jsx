@@ -24,6 +24,7 @@ const ROLES_LONG = [
 const ROLE_COLORS = {
   admin: "bg-purple-100 text-purple-700",
   editor: "bg-blue-100 text-blue-700",
+  contable: "bg-teal-100 text-teal-700",
   usuario: "bg-gray-100 text-gray-600",
 };
 
@@ -53,13 +54,11 @@ export default function UsuariosTab({ user }) {
   async function handleAdd(e) {
     e.preventDefault();
     if (!form.email) return toast("Email obligatorio", "warning");
+    if (!form.password || form.password.length < 8) {
+      return toast("La contraseña debe tener al menos 8 caracteres", "warning");
+    }
     try {
-      await api.createRecord("usuarios", {
-        ...form,
-        empresa_id2: user?.empresa_id,
-        empresa_nombre: user?.empresa_nombre,
-        activo: "true",
-      });
+      await api.post("/auth/users", form);
       toast("Usuario creado", "success");
       setShowAdd(false);
       setForm({ nombre: "", email: "", password: "", rol: "usuario" });
@@ -72,7 +71,7 @@ export default function UsuariosTab({ user }) {
   async function saveRol() {
     if (!editUser) return;
     try {
-      await api.updateRecord("usuarios", { Id: editUser.Id, rol: editRol });
+      await api.patch(`/auth/users/${editUser.Id}/rol`, { rol: editRol });
       toast("Rol actualizado", "success");
       setEditUser(null);
       load();
@@ -82,9 +81,10 @@ export default function UsuariosTab({ user }) {
   }
 
   async function toggleActivo(u) {
+    const nuevoActivo = !(u.activo === "true" || u.activo === true);
     try {
-      await api.updateRecord("usuarios", { Id: u.Id, activo: u.activo === "true" ? "false" : "true" });
-      toast(u.activo === "true" ? "Usuario desactivado" : "Usuario activado", "success");
+      await api.patch(`/auth/users/${u.Id}/activo`, { activo: nuevoActivo });
+      toast(nuevoActivo ? "Usuario activado" : "Usuario desactivado", "success");
       load();
     } catch (err) {
       toast(err.message, "error");

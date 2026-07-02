@@ -5,15 +5,20 @@ const numberFmt = new Intl.NumberFormat("es-ES", {
 
 export function fmt(value) {
   if (value == null || value === "") return "—";
-  return numberFmt.format(Number(value));
+  const n = Number(value);
+  if (Number.isNaN(n)) return "—";
+  return numberFmt.format(n);
 }
 
 export function fmtDate(value) {
   if (!value) return "—";
-  return String(value).substring(0, 10);
+  const s = value instanceof Date ? value.toISOString() : String(value);
+  return s.substring(0, 10);
 }
 
 export function fmtCurrency(value) {
   if (value == null || value === "") return "—";
-  return `${numberFmt.format(Number(value))} €`;
+  const n = Number(value);
+  if (Number.isNaN(n)) return "—";
+  return `${numberFmt.format(n)} €`;
 }

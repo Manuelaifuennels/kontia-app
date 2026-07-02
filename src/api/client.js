@@ -11,7 +11,7 @@ async function apiFetch(path, opts = {}) {
 
   const res = await fetch(`/api${path}`, { ...opts, headers });
 
-  if (res.status === 401 && !path.startsWith("/auth/")) {
+  if (res.status === 401 && path !== "/auth/login" && path !== "/auth/register") {
     const hadToken = localStorage.getItem(TOKEN_KEY);
     localStorage.removeItem("kontia_user");
     localStorage.removeItem("kontia_token");
@@ -55,6 +55,19 @@ const api = {
 
   /* CRUD shortcuts for table records */
   listRecords: (table, params) => api.get(`/data/${table}`, params),
+
+  /* Pagina hasta agotar (el backend capa limit a 500). Tope de seguridad: 10000 filas. */
+  listAllRecords: async (table, params = {}) => {
+    const pageSize = 500;
+    const all = [];
+    for (let offset = 0; offset < 10000; offset += pageSize) {
+      const data = await api.get(`/data/${table}`, { ...params, limit: pageSize, offset });
+      const page = data?.list || [];
+      all.push(...page);
+      if (page.length < pageSize) break;
+    }
+    return { list: all };
+  },
   createRecord: (table, data) => api.post(`/data/${table}`, data),
   updateRecord: (table, data) => api.patch(`/data/${table}`, data),
   deleteRecord: (table, id) => api.del(`/data/${table}`, id),

@@ -12,12 +12,9 @@ export default function Modal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
-      onClick={onClose}
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div
-        className={`bg-white rounded-2xl shadow-xl w-full mx-4 ${width}`}
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className={`bg-white rounded-2xl shadow-xl w-full mx-4 ${width}`}>
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
           <h2 className="text-base font-semibold text-slate-800">{title}</h2>

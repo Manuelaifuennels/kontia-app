@@ -12,8 +12,8 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.listRecords("facturas", { limit: 500, sort: "-fecha_factura" })
-      .then((data) => setFacturas(Array.isArray(data) ? data : data?.list || []))
+    api.listAllRecords("facturas", { sort: "-fecha_factura" })
+      .then((data) => setFacturas(data?.list || []))
       .catch((err) => toast(err.message, "error"))
       .finally(() => setLoading(false));
   }, [toast]);
@@ -23,7 +23,7 @@ export default function Dashboard() {
   const kpis = useMemo(() => {
     const total = active.reduce((s, f) => s + (parseFloat(f.total_factura || f.total) || 0), 0);
     const contabilizadas = active.filter((f) => f.estado === "contabilizada").length;
-    const pendientes = active.filter((f) => f.estado !== "contabilizada").length;
+    const pendientes = active.filter((f) => !["contabilizada", "error", "duplicada"].includes(f.estado)).length;
     const errores = active.filter((f) => f.estado === "error").length;
     return { total, contabilizadas, pendientes, errores };
   }, [active]);

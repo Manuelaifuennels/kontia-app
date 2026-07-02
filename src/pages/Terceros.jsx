@@ -23,11 +23,11 @@ export default function Terceros({ tipo = "proveedores" }) {
     setLoading(true);
     try {
       const [recs, facs] = await Promise.all([
-        api.listRecords(tipo, { limit: 200 }),
-        api.listRecords("facturas", { limit: 1000 }),
+        api.listAllRecords(tipo),
+        api.listAllRecords("facturas"),
       ]);
-      setRecords(recs?.list || (Array.isArray(recs) ? recs : []));
-      setFacturas(facs?.list || (Array.isArray(facs) ? facs : []));
+      setRecords(recs?.list || []);
+      setFacturas(facs?.list || []);
     } catch (err) {
       toast(err.message, "error");
     } finally {
@@ -42,9 +42,13 @@ export default function Terceros({ tipo = "proveedores" }) {
       const fs = facturas.filter((f) => {
         if (f.eliminada === true || f.eliminada === "true") return false;
         if (isProv) {
-          return f.nombre_emisor === t.nombre_proveedor || f.nif_emisor === t.nif_proveedor;
+          if (f.proveedor_id && f.proveedor_id === t.Id) return true;
+          return (t.nombre_proveedor && f.nombre_emisor === t.nombre_proveedor)
+            || (t.nif_proveedor && f.nif_emisor === t.nif_proveedor);
         }
-        return f.nombre_receptor === t.nombre;
+        if (f.cliente_id && f.cliente_id === t.Id) return true;
+        return (t.nombre && f.nombre_receptor === t.nombre)
+          || (t.nif && f.nif_receptor === t.nif);
       });
       return {
         ...t,

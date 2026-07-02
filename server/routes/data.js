@@ -8,7 +8,7 @@ router.use(authMiddleware);
 const ALLOWED_TABLES = new Set([
   'facturas', 'proveedores', 'clientes', 'reglas',
   'usuarios', 'movimientos', 'ejercicios', 'asientos', 'apuntes',
-  'config', 'emisor', 'historial', 'actividades', 'maestro',
+  'config', 'emisor', 'historial', 'actividades', 'maestro', 'conectores',
 ]);
 
 const READONLY_TABLES = new Set(['historial', 'asientos', 'apuntes']);
@@ -58,8 +58,13 @@ const EDITABLE_COLS = {
   apuntes: new Set([
     'cuenta', 'debe', 'haber', 'concepto',
   ]),
+  // anio solo se acepta en POST (creación); en PATCH se elimina del body para
+  // impedir mutar el año de un ejercicio con asientos ya numerados (N24-05)
   ejercicios: new Set([
-    'estado', 'bloqueado', 'fecha_cierre', 'fecha_inicio', 'fecha_fin',
+    'anio', 'estado', 'bloqueado', 'fecha_cierre', 'fecha_inicio', 'fecha_fin',
+  ]),
+  conectores: new Set([
+    'tipo', 'punto', 'email_asociado',
   ]),
 };
 
@@ -99,6 +104,7 @@ const SORTABLE_COLS = {
   historial: new Set(['id', 'fecha_envio', 'destinatario', 'estado', 'created_at']),
   actividades: new Set(['id', 'nombre_actividad', 'created_at']),
   apuntes: new Set(['id', 'asiento_id', 'cuenta', 'debe', 'haber']),
+  conectores: new Set(['id', 'tipo', 'punto', 'created_at']),
 };
 
 const COL_RE = /^[a-z_][a-z0-9_]*$/i;
@@ -471,6 +477,33 @@ router.get('/:table', async (req, res) => {
       }
     }
 
+    // apuntes no tiene empresa_id: el aislamiento multi-tenant se hereda del asiento padre
+    if (table === 'apuntes') {
+      let apOrder = 'ap.id DESC';
+      if (sort) {
+        const desc = sort.startsWith('-');
+        const col = desc ? sort.slice(1) : sort;
+        if (SORTABLE_COLS.apuntes.has(col)) {
+          apOrder = `ap."${col}" ${desc ? 'DESC' : 'ASC'} NULLS LAST`;
+        }
+      }
+      const params = [req.user.empresa_id, limit, offset];
+      let filter = '';
+      const rawAsientoId = Array.isArray(req.query.asiento_id) ? req.query.asiento_id[0] : req.query.asiento_id;
+      if (rawAsientoId && /^\d+$/.test(String(rawAsientoId))) {
+        params.push(parseInt(rawAsientoId, 10));
+        filter = ` AND ap.asiento_id = $${params.length}`;
+      }
+      const result = await pool.query(
+        `SELECT ap.* FROM apuntes ap
+         JOIN asientos s ON s.id = ap.asiento_id
+         WHERE s.empresa_id = $1${filter}
+         ORDER BY ${apOrder} LIMIT $2 OFFSET $3`,
+        params
+      );
+      return res.json({ list: result.rows.map(mapRow) });
+    }
+
     const cols = TABLE_SELECT_COLS[table] || '*';
     const query = `SELECT ${cols} FROM "${table}" WHERE empresa_id = $1 ORDER BY ${orderBy} LIMIT $2 OFFSET $3`;
     const result = await pool.query(query, [req.user.empresa_id, limit, offset]);
@@ -524,6 +557,14 @@ router.post('/:table', async (req, res) => {
       if (await ejercicioBloqueado(req.user.empresa_id, body[dateCol])) {
         return res.status(409).json({ error: 'Ejercicio bloqueado: no se puede crear registro en periodo cerrado' });
       }
+    }
+
+    if (table === 'config' && body.cif_empresa) {
+      const cif = String(body.cif_empresa).trim().toUpperCase();
+      if (!NIF_CIF_RE.test(cif)) {
+        return res.status(400).json({ error: 'Formato de CIF/NIF inválido' });
+      }
+      body.cif_empresa = cif;
     }
 
     let computedApplied = false;
@@ -644,9 +685,11 @@ router.patch('/:table', async (req, res) => {
       } else {
         delete body.estado;
       }
-      if (body.eliminada === true || body.eliminada === 'true') {
+      // eliminada admite true (papelera) y false (restaurar), solo para roles con delete
+      if (body.eliminada === true || body.eliminada === 'true'
+          || body.eliminada === false || body.eliminada === 'false') {
         if (CAN_DELETE.has(liveWrite.rol)) {
-          body.eliminada = true;
+          body.eliminada = body.eliminada === true || body.eliminada === 'true';
         } else {
           delete body.eliminada;
         }
@@ -666,6 +709,10 @@ router.patch('/:table', async (req, res) => {
       if (!NIF_CIF_RE.test(cif)) {
         return res.status(400).json({ error: 'Formato de CIF/NIF inválido' });
       }
+    }
+
+    if (table === 'ejercicios') {
+      delete body.anio;
     }
 
     if (table === 'ejercicios' && (body.estado === 'cerrado' || body.bloqueado === true)) {
@@ -845,6 +892,9 @@ router.delete('/:table/:id', async (req, res) => {
     }
     res.json({ success: true });
   } catch (err) {
+    if (err.code === '23503') {
+      return res.status(409).json({ error: 'No se puede eliminar: el registro tiene datos asociados (asientos, facturas u otros).' });
+    }
     res.status(err.status || 500).json({ error: safeError(err) });
   }
 });

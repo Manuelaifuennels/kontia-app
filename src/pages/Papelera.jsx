@@ -9,15 +9,29 @@ import StatusBadge from "../components/ui/StatusBadge";
 export default function Papelera({ facturas = [], onReload }) {
   const toast = useToast();
   const [sel, setSel] = useState({});
+  const [restoring, setRestoring] = useState(false);
 
   async function handleRestore() {
     const ids = Object.keys(sel).filter((k) => sel[k]).map(Number);
     if (!ids.length) return toast("Selecciona facturas", "warning");
+    setRestoring(true);
+    let ok = 0;
+    const errores = [];
     for (const id of ids) {
-      await api.updateRecord("facturas", { Id: id, eliminada: false });
+      try {
+        await api.updateRecord("facturas", { Id: id, eliminada: false });
+        ok++;
+      } catch (err) {
+        errores.push(err.message);
+      }
     }
     setSel({});
-    toast(`${ids.length} facturas restauradas`, "success");
+    setRestoring(false);
+    if (errores.length === 0) {
+      toast(`${ok} facturas restauradas`, "success");
+    } else {
+      toast(`${ok} restauradas, ${errores.length} con error: ${errores[0]}`, ok > 0 ? "warning" : "error");
+    }
     if (onReload) onReload();
   }
 
@@ -25,8 +39,8 @@ export default function Papelera({ facturas = [], onReload }) {
     <div className="p-6">
       <div className="flex items-center justify-between mb-5">
         <h2 className="text-xl font-bold text-slate-800">Papelera</h2>
-        <Button variant="secondary" onClick={handleRestore}>
-          <Icon name="undo" size={14} /> Restaurar seleccionadas
+        <Button variant="secondary" onClick={handleRestore} disabled={restoring}>
+          <Icon name="undo" size={14} /> {restoring ? "Restaurando..." : "Restaurar seleccionadas"}
         </Button>
       </div>
 

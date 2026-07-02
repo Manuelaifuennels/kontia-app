@@ -1,28 +1,70 @@
 import React, { useState } from "react";
 import api from "../../api/client";
 import { useToast } from "../../components/ui/Toast";
+import { fmtDate } from "../../utils/format";
 import Button from "../../components/ui/Button";
 import Icon from "../../components/ui/Icon";
 import Modal from "../../components/ui/Modal";
 import Field from "../../components/ui/Field";
-import StatusBadge from "../../components/ui/StatusBadge";
 import ConfirmDialog from "../../components/ui/ConfirmDialog";
 
 export default function EjerciciosTab({ ejercicios, onReload }) {
   const toast = useToast();
   const [showAdd, setShowAdd] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
-  const [form, setForm] = useState({ anio: "", fecha_inicio: "", fecha_fin: "", codigo_csv: "", activo: true });
+  const [cerrarTarget, setCerrarTarget] = useState(null);
+  const [form, setForm] = useState({ anio: "", fecha_inicio: "", fecha_fin: "" });
 
   const rows = Array.isArray(ejercicios) ? ejercicios : ejercicios?.list || [];
 
   async function handleAdd(e) {
     e.preventDefault();
+    const anioNum = parseInt(form.anio, 10);
+    if (!anioNum || anioNum < 2000 || anioNum > 2100) {
+      return toast("Introduce un año válido (2000-2100)", "warning");
+    }
     try {
-      await api.createRecord("ejercicios", form);
+      await api.createRecord("ejercicios", {
+        anio: anioNum,
+        fecha_inicio: form.fecha_inicio || null,
+        fecha_fin: form.fecha_fin || null,
+        estado: "abierto",
+      });
       toast("Ejercicio creado", "success");
       setShowAdd(false);
-      setForm({ anio: "", fecha_inicio: "", fecha_fin: "", codigo_csv: "", activo: true });
+      setForm({ anio: "", fecha_inicio: "", fecha_fin: "" });
+      onReload();
+    } catch (err) {
+      toast(err.message, "error");
+    }
+  }
+
+  async function handleCerrar() {
+    if (!cerrarTarget) return;
+    try {
+      await api.updateRecord("ejercicios", { Id: cerrarTarget.Id, estado: "cerrado" });
+      toast(`Ejercicio ${cerrarTarget.anio} cerrado`, "success");
+      onReload();
+    } catch (err) {
+      toast(err.message, "error");
+    }
+  }
+
+  async function handleReabrir(ej) {
+    try {
+      await api.updateRecord("ejercicios", { Id: ej.Id, estado: "abierto", bloqueado: false });
+      toast(`Ejercicio ${ej.anio} reabierto`, "success");
+      onReload();
+    } catch (err) {
+      toast(err.message, "error");
+    }
+  }
+
+  async function handleBloqueo(ej) {
+    const bloquear = !ej.bloqueado;
+    try {
+      await api.updateRecord("ejercicios", { Id: ej.Id, bloqueado: bloquear });
+      toast(bloquear ? `Ejercicio ${ej.anio} bloqueado` : `Ejercicio ${ej.anio} desbloqueado`, "success");
       onReload();
     } catch (err) {
       toast(err.message, "error");
@@ -38,6 +80,16 @@ export default function EjerciciosTab({ ejercicios, onReload }) {
     } catch (err) {
       toast(err.message, "error");
     }
+  }
+
+  function estadoBadge(ej) {
+    if (ej.estado === "cerrado") {
+      return <span className="inline-block rounded-full px-2.5 py-0.5 text-xs font-medium bg-slate-200 text-slate-600">Cerrado</span>;
+    }
+    if (ej.bloqueado) {
+      return <span className="inline-block rounded-full px-2.5 py-0.5 text-xs font-medium bg-amber-100 text-amber-700">Bloqueado</span>;
+    }
+    return <span className="inline-block rounded-full px-2.5 py-0.5 text-xs font-medium bg-green-100 text-green-700">Abierto</span>;
   }
 
   return (
@@ -56,25 +108,39 @@ export default function EjerciciosTab({ ejercicios, onReload }) {
               <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500">Año</th>
               <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500">Fecha inicio</th>
               <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500">Fecha fin</th>
-              <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500">Código CSV</th>
-              <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500">Activo</th>
-              <th className="px-4 py-2.5 w-16"></th>
+              <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500">Estado</th>
+              <th className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500">Fecha cierre</th>
+              <th className="px-4 py-2.5 w-44"></th>
             </tr>
           </thead>
           <tbody>
             {rows.map((ej) => (
               <tr key={ej.Id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
                 <td className="px-4 py-2.5 text-slate-700 font-medium">{ej.anio}</td>
-                <td className="px-4 py-2.5 text-slate-600">{ej.fecha_inicio || "—"}</td>
-                <td className="px-4 py-2.5 text-slate-600">{ej.fecha_fin || "—"}</td>
-                <td className="px-4 py-2.5 text-slate-600">{ej.codigo_empresa_csv || ej.codigo_csv || "—"}</td>
+                <td className="px-4 py-2.5 text-slate-600">{ej.fecha_inicio ? fmtDate(ej.fecha_inicio) : "—"}</td>
+                <td className="px-4 py-2.5 text-slate-600">{ej.fecha_fin ? fmtDate(ej.fecha_fin) : "—"}</td>
+                <td className="px-4 py-2.5">{estadoBadge(ej)}</td>
+                <td className="px-4 py-2.5 text-slate-500 text-xs">{ej.fecha_cierre ? fmtDate(ej.fecha_cierre) : "—"}</td>
                 <td className="px-4 py-2.5">
-                  <StatusBadge status={ej.activo ? "contabilizada" : "error"} />
-                </td>
-                <td className="px-4 py-2.5">
-                  <Button variant="danger" size="sm" onClick={() => setDeleteTarget(ej)}>
-                    <Icon name="trash" size={14} />
-                  </Button>
+                  <div className="flex gap-1 justify-end">
+                    {ej.estado === "cerrado" ? (
+                      <Button variant="secondary" size="sm" onClick={() => handleReabrir(ej)} title="Reabrir ejercicio">
+                        <Icon name="undo" size={13} /> Reabrir
+                      </Button>
+                    ) : (
+                      <>
+                        <Button variant="secondary" size="sm" onClick={() => handleBloqueo(ej)} title={ej.bloqueado ? "Desbloquear" : "Bloquear temporalmente"}>
+                          {ej.bloqueado ? "Desbloquear" : "Bloquear"}
+                        </Button>
+                        <Button variant="secondary" size="sm" onClick={() => setCerrarTarget(ej)} title="Cerrar ejercicio (valida el cuadre de todos los asientos)">
+                          Cerrar
+                        </Button>
+                      </>
+                    )}
+                    <Button variant="danger" size="sm" onClick={() => setDeleteTarget(ej)}>
+                      <Icon name="trash" size={14} />
+                    </Button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -91,9 +157,8 @@ export default function EjerciciosTab({ ejercicios, onReload }) {
       <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Nuevo ejercicio">
         <form onSubmit={handleAdd} className="space-y-1">
           <Field label="Año" value={form.anio} onChange={(v) => setForm({ ...form, anio: v })} type="number" />
-          <Field label="Fecha inicio (DD/MM/AAAA)" value={form.fecha_inicio} onChange={(v) => setForm({ ...form, fecha_inicio: v })} />
-          <Field label="Fecha fin (DD/MM/AAAA)" value={form.fecha_fin} onChange={(v) => setForm({ ...form, fecha_fin: v })} />
-          <Field label="Código empresa CSV" value={form.codigo_csv} onChange={(v) => setForm({ ...form, codigo_csv: v })} />
+          <Field label="Fecha inicio" type="date" value={form.fecha_inicio} onChange={(v) => setForm({ ...form, fecha_inicio: v })} />
+          <Field label="Fecha fin" type="date" value={form.fecha_fin} onChange={(v) => setForm({ ...form, fecha_fin: v })} />
           <div className="flex justify-end gap-2 pt-3">
             <Button variant="ghost" size="sm" onClick={() => setShowAdd(false)} type="button">Cancelar</Button>
             <Button size="sm" type="submit">Crear</Button>
@@ -101,13 +166,24 @@ export default function EjerciciosTab({ ejercicios, onReload }) {
         </form>
       </Modal>
 
+      {/* Cerrar confirm */}
+      <ConfirmDialog
+        open={!!cerrarTarget}
+        onClose={() => setCerrarTarget(null)}
+        onConfirm={handleCerrar}
+        title="Cerrar ejercicio"
+        message={`Se cerrará el ejercicio ${cerrarTarget?.anio}. No se podrán añadir ni modificar asientos. El sistema comprobará antes que todos los asientos estén cuadrados.`}
+        confirmText="Cerrar ejercicio"
+        variant="danger"
+      />
+
       {/* Delete confirm */}
       <ConfirmDialog
         open={!!deleteTarget}
         onClose={() => setDeleteTarget(null)}
         onConfirm={handleDelete}
         title="Eliminar ejercicio"
-        message={`Se eliminara el ejercicio ${deleteTarget?.anio}. Esta accion no se puede deshacer.`}
+        message={`Se eliminará el ejercicio ${deleteTarget?.anio}. Esta acción no se puede deshacer.`}
         confirmText="Eliminar"
       />
     </div>

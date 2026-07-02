@@ -35,7 +35,7 @@ export default function Ajustes() {
   const [ejercicios, setEjercicios] = useState([]);
   const [maestro, setMaestro] = useState([]);
   const [actividades, setActividades] = useState([]);
-  const [emisor, setEmisor] = useState([]);
+  const [emisor, setEmisor] = useState(null);
   const [historial, setHistorial] = useState([]);
 
   const loadAll = useCallback(async () => {

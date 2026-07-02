@@ -36,7 +36,7 @@ export default function Field({
           </label>
         )}
         <select
-          value={value}
+          value={value ?? ""}
           onChange={(e) => onChange(e.target.value)}
           disabled={disabled}
           className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white
@@ -67,7 +67,7 @@ export default function Field({
       )}
       <input
         type={type}
-        value={value}
+        value={value ?? ""}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         disabled={disabled}

@@ -88,7 +88,7 @@ export default function Conectores() {
                 ) : (
                   <div>
                     <div className="bg-green-50 text-green-700 p-3 rounded-lg text-sm mb-3">Exportación completada</div>
-                    {result.download_url && (
+                    {result.download_url && /^(https?:\/\/|\/)/i.test(result.download_url) && (
                       <a href={result.download_url} download className="text-teal-600 font-medium text-sm">
                         ⬇ Descargar archivo
                       </a>

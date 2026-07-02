@@ -55,6 +55,9 @@ router.post('/:endpoint', async (req, res) => {
     webhookCalls.set(uid, calls);
 
     const liveUser = await validateUser(req.user.id, req.user.empresa_id, { live: true });
+    if (!liveUser.activo || !liveUser.rol) {
+      return res.status(403).json({ error: 'Sin acceso a esta empresa' });
+    }
 
     const body = { ...req.body };
     body.empresa_id = req.user.empresa_id;
@@ -92,7 +95,12 @@ router.post('/:endpoint', async (req, res) => {
       if (text.length > MAX_RESPONSE_SIZE) {
         return res.status(502).json({ error: 'Respuesta del webhook demasiado grande' });
       }
-      const data = JSON.parse(text);
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        return res.status(502).json({ error: 'Respuesta del webhook con JSON inválido' });
+      }
       res.status(response.status).json(data);
     } else if (isSafe) {
       const buffer = await response.arrayBuffer();

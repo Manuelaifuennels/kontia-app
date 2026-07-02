@@ -44,7 +44,10 @@ export default function SubirDocs({ onBack }) {
       setProgress((p) => [...p, `Procesando ${file.name}...`]);
       try {
         const b64 = await readFileAsBase64(file);
-        await api.webhook("procesar-factura", {
+        const esPdf = /\.pdf$/i.test(file.name);
+        // separar-pdf es un workflow n8n distinto: trocea el PDF y encola cada página
+        const endpoint = separarPdf && esPdf ? "separar-pdf" : "procesar-factura";
+        await api.webhook(endpoint, {
           archivo_base64: b64,
           nombre_archivo: file.name,
           media_type: file.type,
@@ -52,20 +55,24 @@ export default function SubirDocs({ onBack }) {
           tipo_documento: tipo,
           fecha_contable: fechaMode === "hoy"
             ? new Date().toISOString().split("T")[0]
-            : fechaMode === "configurable" ? fechaCustom : null,
-          separar_paginas: separarPdf,
+            : fechaMode === "configurable" ? (fechaCustom || null) : null,
           empresa_carpeta: String(user.empresa_id),
         });
         results.push({ file: file.name, ok: true });
       } catch (e) {
         results.push({ file: file.name, ok: false, err: e.message });
+        setProgress((p) => [...p, `❌ ${file.name}: ${e.message}`]);
       }
     }
 
     const ok = results.filter((r) => r.ok).length;
-    toast(`${ok}/${files.length} facturas procesadas`, "success");
+    if (ok === files.length) {
+      toast(`${ok}/${files.length} facturas enviadas a procesar`, "success");
+      setTimeout(onBack, 1500);
+    } else {
+      toast(`${ok}/${files.length} enviadas — ${files.length - ok} con error`, ok > 0 ? "warning" : "error");
+    }
     setUploading(false);
-    setTimeout(onBack, 1500);
   }
 
   return (
