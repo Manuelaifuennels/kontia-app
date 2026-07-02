@@ -53,6 +53,41 @@ const api = {
       body: JSON.stringify(body),
     }),
 
+  /* Webhook que puede responder con un fichero: si es JSON lo devuelve parseado,
+     si es un attachment lo descarga en el navegador y devuelve { downloaded, filename }. */
+  webhookDownload: async (endpoint, body) => {
+    const token = localStorage.getItem(TOKEN_KEY);
+    const res = await fetch(`/api/webhook/${endpoint}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      throw new Error(errBody.message || errBody.error || `Error ${res.status}`);
+    }
+    const ct = res.headers.get("content-type") || "";
+    if (ct.includes("application/json")) {
+      return res.json();
+    }
+    const cd = res.headers.get("content-disposition") || "";
+    const match = cd.match(/filename="?([^";]+)"?/i);
+    const filename = match ? match[1] : `${endpoint}.csv`;
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    return { downloaded: true, filename };
+  },
+
   /* CRUD shortcuts for table records */
   listRecords: (table, params) => api.get(`/data/${table}`, params),
 

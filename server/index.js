@@ -8,6 +8,7 @@ import pool from './db.js';
 import authRoutes from './routes/auth.js';
 import dataRoutes from './routes/data.js';
 import webhookRoutes from './routes/webhooks.js';
+import verifactuRoutes from './routes/verifactu.js';
 
 const REQUIRED_ENV = ['DATABASE_URL', 'JWT_SECRET', 'WEBHOOK_URL'];
 const missing = REQUIRED_ENV.filter((k) => !process.env[k]);
@@ -47,6 +48,7 @@ if (!isProd) {
 app.use('/api/auth', authRoutes);
 app.use('/api/data', dataRoutes);
 app.use('/api/webhook', webhookRoutes);
+app.use('/api/verifactu', verifactuRoutes);
 
 app.get('/api/status', async (_req, res) => {
   try {

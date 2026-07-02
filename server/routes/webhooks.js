@@ -10,6 +10,12 @@ const ALLOWED_ENDPOINTS = [
   'exportar-a3',
   'exportar-contaplus',
   'exportar-contasol',
+  'exportar-sage50',
+  'exportar-sagedespachos',
+  'exportar-aplifisa',
+  'exportar-glasof',
+  'exportar-goldennet',
+  'exportar-diezsoftware',
   'conciliacion-bancaria',
   'separar-pdf',
 ];
@@ -107,9 +113,11 @@ router.post('/:endpoint', async (req, res) => {
       if (buffer.byteLength > MAX_RESPONSE_SIZE) {
         return res.status(502).json({ error: 'Respuesta del webhook demasiado grande' });
       }
+      // conservar el filename que envía n8n, forzando siempre attachment
+      const cd = response.headers.get('content-disposition');
       res.status(response.status)
         .set('Content-Type', contentType)
-        .set('Content-Disposition', 'attachment')
+        .set('Content-Disposition', cd && /^attachment/i.test(cd) ? cd : 'attachment')
         .send(Buffer.from(buffer));
     } else {
       res.status(502).json({ error: 'Respuesta del webhook con tipo no permitido' });

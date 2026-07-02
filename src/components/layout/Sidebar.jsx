@@ -9,7 +9,7 @@ const NAV_ITEMS = [
   { key: "clientes", label: "Clientes", icon: "users" },
   { key: "resumen", label: "Resumen Fiscal", icon: "receipt" },
   { key: "conectores", label: "Conectores", icon: "link", perm: "export" },
-  { key: "verifactu", label: "F. Electrónica", icon: "zap" },
+  { key: "verifactu", label: "VeriFactu", icon: "zap" },
   { key: "conciliacion", label: "Conciliación", icon: "bank" },
   { key: "ajustes", label: "Ajustes", icon: "gear", perm: "ajustes" },
   { key: "papelera", label: "Papelera", icon: "trash", perm: "delete" },

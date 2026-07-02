@@ -25,14 +25,14 @@ export default function Conectores() {
     setExporting(true);
     setResult(null);
     try {
-      const res = await api.webhook(endpoint, {
+      const res = await api.webhookDownload(endpoint, {
         formato: "download",
         filtro_where: "(eliminada,neq,true)",
         empresa_id: user.empresa_id,
         ejercicio: new Date().getFullYear().toString(),
       });
       setResult(res);
-      toast("Exportación completada", "success");
+      toast(res.downloaded ? `Descargado ${res.filename}` : "Exportación completada", "success");
     } catch (err) {
       setResult({ error: err.message });
       toast("Error exportando", "error");
@@ -87,7 +87,9 @@ export default function Conectores() {
                   <div className="bg-red-50 text-red-700 p-3 rounded-lg text-sm">{result.error}</div>
                 ) : (
                   <div>
-                    <div className="bg-green-50 text-green-700 p-3 rounded-lg text-sm mb-3">Exportación completada</div>
+                    <div className="bg-green-50 text-green-700 p-3 rounded-lg text-sm mb-3">
+                      {result.downloaded ? `Archivo descargado: ${result.filename}` : "Exportación completada"}
+                    </div>
                     {result.download_url && /^(https?:\/\/|\/)/i.test(result.download_url) && (
                       <a href={result.download_url} download className="text-teal-600 font-medium text-sm">
                         ⬇ Descargar archivo
