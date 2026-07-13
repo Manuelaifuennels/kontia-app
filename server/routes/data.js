@@ -11,6 +11,10 @@ const ALLOWED_TABLES = new Set([
   'config', 'emisor', 'historial', 'actividades', 'maestro', 'conectores',
 ]);
 
+// asientos/apuntes solo se escriben desde el endpoint contabilizar. OJO: apuntes
+// NO tiene columna empresa_id — si algún día se saca de READONLY, el CRUD genérico
+// (que antepone empresa_id en INSERT y filtra por él en UPDATE/DELETE) fallará:
+// habría que escribir ramas específicas vía JOIN con asientos.
 const READONLY_TABLES = new Set(['historial', 'asientos', 'apuntes']);
 const BLOCKED_CRUD = new Set(['usuarios']);
 
@@ -54,9 +58,6 @@ const EDITABLE_COLS = {
   movimientos: new Set([
     'fecha', 'concepto', 'importe', 'referencia',
     'cuenta_bancaria', 'conciliado', 'saldo', 'factura_id',
-  ]),
-  apuntes: new Set([
-    'cuenta', 'debe', 'haber', 'concepto',
   ]),
   // anio solo se acepta en POST (creación); en PATCH se elimina del body para
   // impedir mutar el año de un ejercicio con asientos ya numerados (N24-05)
@@ -193,16 +194,6 @@ async function ejercicioBloqueado(empresaId, fecha) {
   const ej = r.rows[0];
   if (!ej) return false;
   return ej.bloqueado || ej.estado === 'cerrado';
-}
-
-async function verificarApunteOwnership(apunteId, empresaId) {
-  const r = await pool.query(
-    `SELECT a.id, s.fecha FROM apuntes a
-     JOIN asientos s ON s.id = a.asiento_id
-     WHERE a.id = $1 AND s.empresa_id = $2`,
-    [apunteId, empresaId]
-  );
-  return r.rows[0] || null;
 }
 
 router.post('/facturas/:id/contabilizar', async (req, res) => {
@@ -539,22 +530,6 @@ router.post('/:table', async (req, res) => {
     delete body.created_at; delete body.updated_at;
     delete body.empresa_id;
 
-    if (table === 'apuntes') {
-      if (!body.asiento_id || !/^\d+$/.test(String(body.asiento_id))) {
-        return res.status(400).json({ error: 'asiento_id requerido (entero positivo)' });
-      }
-      const asientoCheck = await pool.query(
-        'SELECT id, fecha FROM asientos WHERE id = $1 AND empresa_id = $2',
-        [parseInt(body.asiento_id, 10), req.user.empresa_id]
-      );
-      if (asientoCheck.rows.length === 0) {
-        return res.status(403).json({ error: 'Asiento no encontrado o sin acceso' });
-      }
-      if (await ejercicioBloqueado(req.user.empresa_id, asientoCheck.rows[0].fecha)) {
-        return res.status(409).json({ error: 'Ejercicio bloqueado: no se puede añadir apunte' });
-      }
-    }
-
     const dateCol = table === 'facturas' ? 'fecha_factura' : 'fecha';
     if (FISCAL_DATE_TABLES.has(table) && body[dateCol]) {
       if (await ejercicioBloqueado(req.user.empresa_id, body[dateCol])) {
@@ -642,14 +617,6 @@ router.patch('/:table', async (req, res) => {
         return res.status(409).json({ error: 'Ejercicio bloqueado: factura inmutable' });
       }
       fcurrent = fcheck.rows[0];
-    } else if (table === 'apuntes') {
-      const apunte = await verificarApunteOwnership(recordId, req.user.empresa_id);
-      if (!apunte) {
-        return res.status(403).json({ error: 'Sin acceso a este registro' });
-      }
-      if (await ejercicioBloqueado(req.user.empresa_id, apunte.fecha)) {
-        return res.status(409).json({ error: 'Ejercicio bloqueado: apunte inmutable' });
-      }
     } else {
       const check = await pool.query(
         `SELECT id FROM "${table}" WHERE id = $1 AND empresa_id = $2`,
@@ -877,13 +844,13 @@ router.delete('/:table/:id', async (req, res) => {
       }
     }
 
-    if (table === 'apuntes') {
-      const apunte = await verificarApunteOwnership(deleteId, req.user.empresa_id);
-      if (!apunte) {
-        return res.status(403).json({ error: 'Sin acceso a este registro' });
-      }
-      if (await ejercicioBloqueado(req.user.empresa_id, apunte.fecha)) {
-        return res.status(409).json({ error: 'Ejercicio bloqueado: apunte inmutable' });
+    if (table === 'ejercicios') {
+      const ejCheck = await pool.query(
+        'SELECT estado, bloqueado FROM ejercicios WHERE id = $1 AND empresa_id = $2',
+        [deleteId, req.user.empresa_id]
+      );
+      if (ejCheck.rows[0] && (ejCheck.rows[0].estado === 'cerrado' || ejCheck.rows[0].bloqueado)) {
+        return res.status(409).json({ error: 'Ejercicio cerrado o bloqueado: no se puede eliminar. Reábrelo primero.' });
       }
     }
 
