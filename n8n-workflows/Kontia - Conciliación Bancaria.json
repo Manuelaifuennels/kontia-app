@@ -1,0 +1,174 @@
+﻿{
+  "name": "Kontia - Conciliación Bancaria",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "conciliacion-bancaria",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "4de7bcb7-b870-40fc-84d3-34abc96179f2",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -48,
+        -16
+      ],
+      "webhookId": "conciliacion-bancaria"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parsear CSV bancario del body (base64)\nconst body = $('Webhook').first().json.body;\nconst csvBase64 = body.csv_base64;\nconst empresaId = body.empresa_id || 0;\nconst csvText = Buffer.from(csvBase64, 'base64').toString('utf-8');\nconst lines = csvText.split('\\n').filter(l => l.trim());\n\n// Detectar separador\nconst sep = lines[0].includes(';') ? ';' : lines[0].includes('\\t') ? '\\t' : ',';\nconst headers = lines[0].split(sep).map(h => h.trim().toLowerCase());\n\nconst movimientos = [];\nfor (let i = 1; i < lines.length; i++) {\n  const cols = lines[i].split(sep);\n  if (cols.length < 3) continue;\n  \n  // Intentar detectar columnas: fecha, concepto, importe, saldo\n  const mov = {\n    fecha: cols[0]?.trim() || '',\n    concepto: cols[1]?.trim() || '',\n    importe: parseFloat((cols[2] || '0').replace(',', '.').replace(/[^0-9.-]/g, '')) || 0,\n    saldo: cols[3] ? parseFloat((cols[3] || '0').replace(',', '.').replace(/[^0-9.-]/g, '')) : null,\n    empresa_id: empresaId,\n    conciliado: false,\n    factura_id: null\n  };\n  movimientos.push(mov);\n}\n\nreturn [{ json: { movimientos, total: movimientos.length } }];"
+      },
+      "id": "f5667abd-0e34-468e-b089-dfbdfaff7775",
+      "name": "Parsear CSV",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        192,
+        -16
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT *, id AS \"Id\" FROM facturas WHERE empresa_id = {{ $('Webhook').first().json.body.empresa_id || 0 }} AND estado = 'contabilizada' AND eliminada = false ORDER BY fecha_factura DESC LIMIT 500",
+        "options": {}
+      },
+      "id": "3c0ad029-6eec-467e-8c99-12177b007bbc",
+      "name": "Leer Facturas PostgreSQL",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        192,
+        192
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "CREATE_ME",
+          "name": "Kontia PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "options": {}
+      },
+      "id": "30c5a824-41cd-4d41-a392-8e96aba01359",
+      "name": "Merge",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        432,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Matching automático: comparar importes de movimientos con totales de facturas\nconst movData = $('Parsear CSV').first().json;\nconst facturas = $('Leer Facturas PostgreSQL').all().map(i => i.json);\nconst movimientos = movData.movimientos || [];\n\nlet conciliados = 0;\nconst resultados = [];\n\nfor (const mov of movimientos) {\n  let matched = null;\n  const absImporte = Math.abs(mov.importe);\n  \n  // Buscar factura con mismo importe (tolerancia 0.05€)\n  for (const f of facturas) {\n    const totalFact = Math.abs(Number(f.total_factura) || 0);\n    if (Math.abs(totalFact - absImporte) < 0.05) {\n      // Comprobar que no esté ya conciliada\n      if (!resultados.some(r => r.factura_id === f.Id)) {\n        matched = f;\n        break;\n      }\n    }\n  }\n  \n  if (matched) {\n    conciliados++;\n    resultados.push({\n      ...mov,\n      conciliado: true,\n      factura_id: matched.Id,\n      factura_numero: matched.numero_factura,\n      factura_emisor: matched.nombre_emisor\n    });\n  } else {\n    resultados.push({ ...mov, conciliado: false, factura_id: null });\n  }\n}\n\nreturn [{\n  json: {\n    success: true,\n    total_movimientos: movimientos.length,\n    conciliados: conciliados,\n    sin_conciliar: movimientos.length - conciliados,\n    porcentaje: movimientos.length > 0 ? Math.round(conciliados / movimientos.length * 100) : 0,\n    movimientos: resultados\n  }\n}];"
+      },
+      "id": "7a0c8f53-81e2-4672-9043-5bf14a47314a",
+      "name": "Conciliar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "f2afe170-882f-493d-8ca6-e8e3a93e0229",
+      "name": "Responder",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        912,
+        96
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Parsear CSV",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Leer Facturas PostgreSQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parsear CSV": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer Facturas PostgreSQL": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Conciliar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Conciliar": {
+      "main": [
+        [
+          {
+            "node": "Responder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "09045a82-efae-4545-8848-5a9b458777fc",
+  "meta": {
+    "instanceId": "f327dfd493c80fca4f650a08e96d3ff3a416159f8af51aeabdfa008b14e550c4"
+  },
+  "nodeGroups": [],
+  "id": "umkhQWUMPQ9dfo95",
+  "tags": []
+}

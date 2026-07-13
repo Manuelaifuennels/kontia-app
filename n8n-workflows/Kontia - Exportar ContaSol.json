@@ -1,0 +1,133 @@
+﻿{
+  "name": "Kontia - Exportar ContaSol",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "exportar-contasol",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "5931b496-6a3c-4a35-9360-18bb470bb046",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -272,
+        -32
+      ],
+      "webhookId": "exportar-contasol"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT *, id AS \"Id\" FROM facturas WHERE empresa_id = {{ $json.body.empresa_id || $('Webhook').first().json.body.empresa_id || 0 }} AND estado = 'contabilizada' AND eliminada = false ORDER BY fecha_factura ASC LIMIT 1000",
+        "options": {}
+      },
+      "id": "19d77b8c-14f0-42de-9ccf-aae718167af9",
+      "name": "Leer Facturas PostgreSQL",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -32,
+        -32
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "CREATE_ME",
+          "name": "Kontia PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Formato ContaSol - CSV con separador ;\nconst facturas = $('Leer Facturas PostgreSQL').all().map(i => i.json);\nconst body = $('Webhook').first().json.body || {};\nconst ejercicio = body.ejercicio || new Date().getFullYear().toString();\n\n// ContaSol: Asiento;Fecha;Cuenta;Debe;Haber;Concepto;Documento;NIF\nconst lineas = ['Asiento;Fecha;Cuenta;Debe;Haber;Concepto;Documento;NIF'];\nlet numAsiento = 1;\n\nfor (const f of facturas) {\n  const fecha = f.fecha_factura || '';\n  const esCompra = (f.tipo_documento || 'compra') !== 'venta';\n  const base = Number(f.base_imponible) || Number(f.total_factura) || 0;\n  const iva = Number(f.cuota_iva) || 0;\n  const total = Number(f.total_factura) || 0;\n  const cuenta = f.cuenta_gasto || '629';\n  const concepto = (f.nombre_emisor || '').replace(/;/g, ',');\n  const nif = f.nif_emisor || '';\n  const doc = (f.numero_factura || '').replace(/;/g, ',');\n  const as = String(numAsiento);\n\n  if (esCompra) {\n    lineas.push(as + ';' + fecha + ';' + cuenta + ';' + base.toFixed(2) + ';0.00;' + concepto + ';' + doc + ';' + nif);\n    if (iva > 0) lineas.push(as + ';' + fecha + ';472;' + iva.toFixed(2) + ';0.00;IVA ' + concepto + ';' + doc + ';' + nif);\n    lineas.push(as + ';' + fecha + ';400;0.00;' + total.toFixed(2) + ';' + concepto + ';' + doc + ';' + nif);\n  } else {\n    lineas.push(as + ';' + fecha + ';430;' + total.toFixed(2) + ';0.00;' + concepto + ';' + doc + ';' + nif);\n    lineas.push(as + ';' + fecha + ';' + (cuenta || '705') + ';0.00;' + base.toFixed(2) + ';' + concepto + ';' + doc + ';' + nif);\n    if (iva > 0) lineas.push(as + ';' + fecha + ';477;0.00;' + iva.toFixed(2) + ';IVA ' + concepto + ';' + doc + ';' + nif);\n  }\n  numAsiento++;\n}\n\nreturn [{\n  json: {\n    success: true,\n    total_facturas: facturas.length,\n    formato: 'ContaSol',\n    csv_content: lineas.join('\\n'),\n    filename: 'kontia_contasol_' + new Date().toISOString().split('T')[0] + '.csv'\n  }\n}];"
+      },
+      "id": "71a2c656-32bb-4bf7-8104-993e8b2583b9",
+      "name": "Generar ContaSol",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        -32
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.csv_content }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/plain; charset=utf-8"
+              },
+              {
+                "name": "Content-Disposition",
+                "value": "=attachment; filename=\"{{ $json.filename }}\""
+              }
+            ]
+          }
+        }
+      },
+      "id": "9ed1e4b6-408e-43e5-a948-52c96353a747",
+      "name": "Responder",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        448,
+        -32
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Leer Facturas PostgreSQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer Facturas PostgreSQL": {
+      "main": [
+        [
+          {
+            "node": "Generar ContaSol",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generar ContaSol": {
+      "main": [
+        [
+          {
+            "node": "Responder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "853da2bc-44c9-4ca5-91f4-7bea9713c44e",
+  "meta": {
+    "instanceId": "f327dfd493c80fca4f650a08e96d3ff3a416159f8af51aeabdfa008b14e550c4"
+  },
+  "nodeGroups": [],
+  "id": "Bnc5hjZqPrb2Cx7T",
+  "tags": []
+}

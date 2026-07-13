@@ -1,0 +1,133 @@
+﻿{
+  "name": "Kontia - Exportar Contaplus",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "exportar-contaplus",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "53beb1bf-2e22-4d7c-93b0-2db7e08a8232",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        0
+      ],
+      "webhookId": "exportar-contaplus"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT *, id AS \"Id\" FROM facturas WHERE empresa_id = {{ $json.body.empresa_id || $('Webhook').first().json.body.empresa_id || 0 }} AND estado = 'contabilizada' AND eliminada = false ORDER BY fecha_factura ASC LIMIT 1000",
+        "options": {}
+      },
+      "id": "52c02b6b-b095-439b-ac6e-b282899238b7",
+      "name": "Leer Facturas PostgreSQL",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        0,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "CREATE_ME",
+          "name": "Kontia PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Formato Contaplus (ASC) \n// Longitud fija por campo\nconst facturas = $('Leer Facturas PostgreSQL').all().map(i => i.json);\nconst body = $('Webhook').first().json.body || {};\nconst ejercicio = body.ejercicio || new Date().getFullYear().toString().substring(2);\n\nconst lineas = [];\nlet numAsiento = 1;\n\nfunction pad(str, len, char=' ') { return String(str || '').substring(0,len).padEnd(len, char); }\nfunction padNum(num, len) { return Number(num || 0).toFixed(2).padStart(len, ' '); }\n\nfor (const f of facturas) {\n  const fecha = (f.fecha_factura || '').split('-').reverse().join(''); // DDMMYYYY\n  const esCompra = (f.tipo_documento || 'compra') !== 'venta';\n  const base = Number(f.base_imponible) || Number(f.total_factura) || 0;\n  const iva = Number(f.cuota_iva) || 0;\n  const total = Number(f.total_factura) || 0;\n  const cuenta = (f.cuenta_gasto || '629').padEnd(10, '0');\n  const concepto = pad(f.nombre_emisor || '', 25);\n  const nif = pad(f.nif_emisor || '', 15);\n  const numFra = pad(f.numero_factura || '', 15);\n  const asiento = String(numAsiento).padStart(8, '0');\n\n  if (esCompra) {\n    // Gasto al Debe\n    lineas.push(ejercicio + asiento + fecha + cuenta + padNum(base,14) + padNum(0,14) + concepto + nif + 'D' + numFra);\n    // IVA al Debe\n    if (iva > 0) {\n      lineas.push(ejercicio + asiento + fecha + '4720000000' + padNum(iva,14) + padNum(0,14) + pad('IVA SOPORTADO',25) + nif + 'D' + numFra);\n    }\n    // Proveedor al Haber\n    lineas.push(ejercicio + asiento + fecha + '4000000001' + padNum(0,14) + padNum(total,14) + concepto + nif + 'H' + numFra);\n  } else {\n    // Cliente al Debe\n    lineas.push(ejercicio + asiento + fecha + '4300000001' + padNum(total,14) + padNum(0,14) + concepto + nif + 'D' + numFra);\n    // Ingreso al Haber\n    lineas.push(ejercicio + asiento + fecha + cuenta + padNum(0,14) + padNum(base,14) + concepto + nif + 'H' + numFra);\n    if (iva > 0) {\n      lineas.push(ejercicio + asiento + fecha + '4770000000' + padNum(0,14) + padNum(iva,14) + pad('IVA REPERCUTIDO',25) + nif + 'H' + numFra);\n    }\n  }\n  numAsiento++;\n}\n\nreturn [{\n  json: {\n    success: true,\n    total_facturas: facturas.length,\n    formato: 'Contaplus',\n    csv_content: lineas.join('\\n'),\n    filename: 'kontia_contaplus_' + new Date().toISOString().split('T')[0] + '.asc'\n  }\n}];"
+      },
+      "id": "01a22d54-bd70-49ab-a1fb-a1c2626ade90",
+      "name": "Generar Contaplus",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.csv_content }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/plain; charset=utf-8"
+              },
+              {
+                "name": "Content-Disposition",
+                "value": "=attachment; filename=\"{{ $json.filename }}\""
+              }
+            ]
+          }
+        }
+      },
+      "id": "d62feba8-69a5-4ccd-a443-8b2dac258f47",
+      "name": "Responder",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        0
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Leer Facturas PostgreSQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer Facturas PostgreSQL": {
+      "main": [
+        [
+          {
+            "node": "Generar Contaplus",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generar Contaplus": {
+      "main": [
+        [
+          {
+            "node": "Responder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "c91b014f-8d50-468c-8a0e-ca55cc80814c",
+  "meta": {
+    "instanceId": "f327dfd493c80fca4f650a08e96d3ff3a416159f8af51aeabdfa008b14e550c4"
+  },
+  "nodeGroups": [],
+  "id": "ljTkZJp5O8p7vBCT",
+  "tags": []
+}

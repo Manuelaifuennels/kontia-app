@@ -1,0 +1,74 @@
+{
+  "name": "Kontia - Exportar Glasof",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "exportar-glasof",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "kontia-glasof-webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [16, -64],
+      "webhookId": "exportar-glasof"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT a.numero AS asiento, a.fecha::text AS fecha, ap.cuenta, ap.concepto, ap.debe, ap.haber, COALESCE(f.numero_factura,'') AS documento, COALESCE(f.nif_emisor,'') AS nif FROM asientos a JOIN apuntes ap ON ap.asiento_id = a.id LEFT JOIN facturas f ON f.id = a.factura_id JOIN ejercicios e ON e.id = a.ejercicio_id WHERE a.empresa_id = {{ $json.body.empresa_id || $('Webhook').first().json.body.empresa_id || 0 }} AND e.anio = {{ parseInt($('Webhook').first().json.body.ejercicio) || new Date().getFullYear() }} ORDER BY a.numero ASC, ap.id ASC LIMIT 20000",
+        "options": {}
+      },
+      "id": "kontia-glasof-postgres",
+      "name": "Leer Apuntes PostgreSQL",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [256, -64],
+      "credentials": {
+        "postgres": {
+          "id": "CREATE_ME",
+          "name": "Kontia PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Formato Glasof: CSV ';' con decimal coma (importación de asientos desde Excel/CSV).\n// Columnas: Fecha;Asiento;Cuenta;Concepto;Debe;Haber;Documento;NIF.\n// Fuente: asientos+apuntes reales de Kontia. Validar con una importación de prueba antes de uso masivo.\nconst rows = $('Leer Apuntes PostgreSQL').all().map(i => i.json);\nconst body = $('Webhook').first().json.body || {};\nconst ejercicio = String(body.ejercicio || new Date().getFullYear());\nconst fmtCo = (n) => ((Number(n) || 0).toFixed(2)).replace('.', ',');\nconst fEs = (iso) => { const s = String(iso || '').substring(0, 10); const p = s.split('-'); return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : s; };\nconst clean = (s, len) => String(s || '').replace(/[;\\r\\n]/g, ' ').substring(0, len);\n\nconst lineas = ['Fecha;Asiento;Cuenta;Concepto;Debe;Haber;Documento;NIF'];\nfor (const r of rows) {\n  lineas.push([\n    fEs(r.fecha), r.asiento, r.cuenta,\n    clean(r.concepto, 50), fmtCo(r.debe), fmtCo(r.haber),\n    clean(r.documento, 20), clean(r.nif, 15)\n  ].join(';'));\n}\n\nreturn [{\n  json: {\n    success: true,\n    total_apuntes: rows.length,\n    formato: 'Glasof',\n    csv_content: lineas.join('\\r\\n'),\n    filename: 'kontia_glasof_' + ejercicio + '.csv'\n  }\n}];"
+      },
+      "id": "kontia-glasof-code",
+      "name": "Generar Glasof",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [496, -64]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.csv_content }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              { "name": "Content-Type", "value": "text/csv; charset=utf-8" },
+              { "name": "Content-Disposition", "value": "=attachment; filename=\"{{ $json.filename }}\"" }
+            ]
+          }
+        }
+      },
+      "id": "kontia-glasof-respond",
+      "name": "Responder",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [736, -64]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Leer Apuntes PostgreSQL", "type": "main", "index": 0 }]] },
+    "Leer Apuntes PostgreSQL": { "main": [[{ "node": "Generar Glasof", "type": "main", "index": 0 }]] },
+    "Generar Glasof": { "main": [[{ "node": "Responder", "type": "main", "index": 0 }]] }
+  },
+  "active": true,
+  "settings": { "executionOrder": "v1" }
+}

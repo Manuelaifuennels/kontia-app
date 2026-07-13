@@ -1,0 +1,979 @@
+﻿{
+  "name": "Contabilizador IA v11 PostgreSQL",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "procesar-factura",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "faca8bea-2c58-44f2-b068-fe00c6cd2af2",
+      "name": "1. Webhook Recibir Factura2",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        3072,
+        3376
+      ],
+      "webhookId": "procesar-factura"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "pdf-check",
+              "leftValue": "={{ $('1. Webhook Recibir Factura2').first().json.body.media_type }}",
+              "rightValue": "application/pdf",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "9c64a224-7fad-420f-ae1e-6a8372aa4f6c",
+      "name": "3c. Es PDF?1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        3968,
+        3376
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-6\",\n  \"max_tokens\": 2000,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": [\n        {\n          \"type\": \"document\",\n          \"source\": {\n            \"type\": \"base64\",\n            \"media_type\": \"application/pdf\",\n            \"data\": \"{{ $('1. Webhook Recibir Factura2').first().json.body.archivo_base64 }}\"\n          }\n        },\n        {\n          \"type\": \"text\",\n          \"text\": \"Eres un experto contable español. Analiza esta factura y extrae TODOS los datos. Responde SOLO con JSON válido, sin markdown.\\n\\n{\\\"numero_factura\\\":\\\"string\\\",\\\"fecha_factura\\\":\\\"YYYY-MM-DD\\\",\\\"nif_emisor\\\":\\\"string sin espacios\\\",\\\"nombre_emisor\\\":\\\"string\\\",\\\"nif_receptor\\\":\\\"string\\\",\\\"nombre_receptor\\\":\\\"string\\\",\\\"tipo_documento\\\":\\\"compra, venta o rectificativa\\\",\\\"conceptos\\\":[{\\\"descripcion\\\":\\\"string\\\",\\\"cantidad\\\":0,\\\"precio_unitario\\\":0,\\\"importe\\\":0}],\\\"base_imponible\\\":0,\\\"desglose_iva\\\":[{\\\"tipo_iva\\\":21,\\\"base\\\":0,\\\"cuota\\\":0}],\\\"total_iva\\\":0,\\\"retencion_irpf\\\":{\\\"porcentaje\\\":0,\\\"base\\\":0,\\\"cuota\\\":0},\\\"recargo_equivalencia\\\":{\\\"porcentaje\\\":0,\\\"cuota\\\":0},\\\"total_factura\\\":0,\\\"forma_pago\\\":\\\"string\\\",\\\"cuenta_bancaria\\\":\\\"IBAN\\\",\\\"es_intracomunitaria\\\":false,\\\"es_inversion_sujeto_pasivo\\\":false,\\\"cuenta_gasto_sugerida\\\":\\\"PGC 3 dígitos\\\",\\\"confianza\\\":0}\\n\\nIMPORTANTE desglose_iva: tipo_iva puede ser 21, 12, 10.5, 10, 5, 4, 0. Para tipo_iva=0, incluir tipo_exencion: exento (art.20), no_exento (intracomunitaria/ISP), o no_sujeto. Incluir TODAS las líneas IVA.\\n\\nCuentas PGC: 600=compras, 621=arrendamientos, 623=profesionales, 628=suministros, 629=otros servicios.\\n\\ntipo_documento: \\\"compra\\\" si es factura recibida de proveedor (gasto), \\\"venta\\\" si es emitida a cliente (ingreso), \\\"rectificativa\\\" si es una factura rectificativa o de abono (busca las palabras rectificativa/abono/credit note o importes negativos). Por defecto \\\"compra\\\". IMPORTANTE: en rectificativas devuelve SIEMPRE todos los importes en POSITIVO (valor absoluto).\\ndesglose_iva: incluye SOLO los tipos de IVA presentes. Tipos España: 21%, 10%, 4%, 0% exento. tipo_iva es el PORCENTAJE (21, 10, 4, 0).\\nNull si no existe. 2 decimales.\"\n        }\n      ]\n    }\n  ]\n}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "bdd0b910-3b55-40c0-a770-84f53e4698b3",
+      "name": "4b. Claude PDF OCR1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4192,
+        3280
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "CREATE_ME_ANTHROPIC",
+          "name": "Anthropic API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nlet textContent = response.content\n  ? (typeof response.content === 'string' ? response.content : response.content[0]?.text || JSON.stringify(response.content))\n  : response.text || response.message?.content\n  || (response.choices && response.choices[0]?.message?.content)\n  || JSON.stringify(response);\n\nlet jsonStr = textContent.trim();\nif (jsonStr.includes('```json')) {\n  jsonStr = jsonStr.split('```json')[1].split('```')[0].trim();\n} else if (jsonStr.startsWith('```')) {\n  jsonStr = jsonStr.split('```')[1].split('```')[0].trim();\n}\n\ntry {\n  const datos = JSON.parse(jsonStr);\n\n  // Mapear desglose_iva a campos individuales — TODOS los tipos\n  let base_iva_21 = 0, cuota_iva_21 = 0;\n  let base_iva_12 = 0, cuota_iva_12 = 0;\n  let base_iva_10_5 = 0, cuota_iva_10_5 = 0;\n  let base_iva_10 = 0, cuota_iva_10 = 0;\n  let base_iva_5 = 0, cuota_iva_5 = 0;\n  let base_iva_4 = 0, cuota_iva_4 = 0;\n  let base_iva_0 = 0, cuota_iva_0 = 0;\n  let base_iva_0_no_ex = 0, cuota_iva_0_no_ex = 0;\n  let base_iva_0_no_sujeto = 0, cuota_iva_0_no_sujeto = 0;\n\n  if (datos.desglose_iva && Array.isArray(datos.desglose_iva)) {\n    for (const linea of datos.desglose_iva) {\n      const tipo = Number(linea.tipo_iva);\n      const base = Number(linea.base) || 0;\n      const cuota = Number(linea.cuota) || 0;\n      const exencion = (linea.tipo_exencion || \"exento\").toLowerCase();\n\n      if (tipo === 21) { base_iva_21 += base; cuota_iva_21 += cuota; }\n      else if (tipo === 12) { base_iva_12 += base; cuota_iva_12 += cuota; }\n      else if (tipo === 10.5) { base_iva_10_5 += base; cuota_iva_10_5 += cuota; }\n      else if (tipo === 10) { base_iva_10 += base; cuota_iva_10 += cuota; }\n      else if (tipo === 5) { base_iva_5 += base; cuota_iva_5 += cuota; }\n      else if (tipo === 4) { base_iva_4 += base; cuota_iva_4 += cuota; }\n      else if (tipo === 0) {\n        if (exencion === \"no_sujeto\") { base_iva_0_no_sujeto += base; cuota_iva_0_no_sujeto += cuota; }\n        else if (exencion === \"no_exento\") { base_iva_0_no_ex += base; cuota_iva_0_no_ex += cuota; }\n        else { base_iva_0 += base; cuota_iva_0 += cuota; }\n      }\n    }\n  }\n\n  let tipo_iva_principal = 21, max_base = 0;\n  if (datos.desglose_iva && Array.isArray(datos.desglose_iva)) {\n    for (const linea of datos.desglose_iva) {\n      if (Number(linea.base) > max_base) { max_base = Number(linea.base); tipo_iva_principal = Number(linea.tipo_iva); }\n    }\n  }\n\n  const cuotaIvaTotal = datos.total_iva ||\n    (datos.desglose_iva ? datos.desglose_iva.reduce((sum, d) => sum + (Number(d.cuota) || 0), 0) : 0);\n\n  return [{\n    json: {\n      ...datos,\n      tipo_documento: datos.tipo_documento || \"compra\",\n      tipo_iva_principal,\n      cuota_iva_total: cuotaIvaTotal,\n      base_iva_21, cuota_iva_21,\n      base_iva_12, cuota_iva_12,\n      base_iva_10_5, cuota_iva_10_5,\n      base_iva_10, cuota_iva_10,\n      base_iva_5, cuota_iva_5,\n      base_iva_4, cuota_iva_4,\n      base_iva_0, cuota_iva_0,\n      base_iva_0_no_ex, cuota_iva_0_no_ex,\n      base_iva_0_no_sujeto, cuota_iva_0_no_sujeto,\n      metodo_pago: datos.forma_pago || datos.metodo_pago || \"\",\n      pct_retencion: datos.retencion_irpf ? datos.retencion_irpf.porcentaje : 0,\n      retencion: datos.retencion_irpf ? datos.retencion_irpf.cuota : 0,\n      raw_response: textContent,\n      parse_ok: true,\n      pct_req: datos.recargo_equivalencia ? datos.recargo_equivalencia.porcentaje : 0,\n      cuota_req: datos.recargo_equivalencia ? datos.recargo_equivalencia.cuota : 0\n    }\n  }];\n} catch (e) {\n  return [{ json: { parse_ok: false, error: e.message, raw_response: textContent, confianza: 0 } }];\n}"
+      },
+      "id": "5d8ea94f-0bd5-44f8-8553-ad4a3a34b580",
+      "name": "5-PDF. Parsear Claude1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4416,
+        3280
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "dup-condition",
+              "leftValue": "={{ $json.cnt || 0 }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "bd8aac73-23bb-4968-aae0-a0ecfa95fc6d",
+      "name": "5c. No Duplicada?1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        5088,
+        3472
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=UPDATE facturas SET estado = 'duplicada' WHERE id = {{ $('2. Crear Factura PostgreSQL').first().json.Id }}",
+        "options": {}
+      },
+      "id": "b7437410-9789-47be-b463-05148c746c73",
+      "name": "DUPLICADA: Marcar PostgreSQL",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        5312,
+        3664
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "CREATE_ME",
+          "name": "Kontia PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO facturas (estado, archivo_nombre, empresa_id, tipo_documento) VALUES ('procesando', '{{ ($json.body.archivo_nombre || 'sin_nombre.pdf').replace(/'/g, \"''\").substring(0, 500) }}', {{ parseInt($json.body.empresa_id || $json.body.empresa_carpeta) || 0 }}, '{{ ($json.body.tipo_documento || 'compra').replace(/[^a-z_]/gi, '').substring(0, 30) || 'compra' }}') RETURNING *, id AS \"Id\"",
+        "options": {}
+      },
+      "id": "3c60ea54-69d9-4607-adac-186b009dd996",
+      "name": "2. Crear Factura PostgreSQL",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        3296,
+        3376
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "CREATE_ME",
+          "name": "Kontia PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json;\nlet textContent = response.content\n  ? (typeof response.content === 'string' ? response.content : response.content[0]?.text || JSON.stringify(response.content))\n  : response.text || response.message?.content\n  || (response.choices && response.choices[0]?.message?.content)\n  || JSON.stringify(response);\n\nlet jsonStr = textContent.trim();\nif (jsonStr.includes('```json')) {\n  jsonStr = jsonStr.split('```json')[1].split('```')[0].trim();\n} else if (jsonStr.startsWith('```')) {\n  jsonStr = jsonStr.split('```')[1].split('```')[0].trim();\n}\n\ntry {\n  const datos = JSON.parse(jsonStr);\n\n  // Mapear desglose_iva a campos individuales — TODOS los tipos\n  let base_iva_21 = 0, cuota_iva_21 = 0;\n  let base_iva_12 = 0, cuota_iva_12 = 0;\n  let base_iva_10_5 = 0, cuota_iva_10_5 = 0;\n  let base_iva_10 = 0, cuota_iva_10 = 0;\n  let base_iva_5 = 0, cuota_iva_5 = 0;\n  let base_iva_4 = 0, cuota_iva_4 = 0;\n  let base_iva_0 = 0, cuota_iva_0 = 0;\n  let base_iva_0_no_ex = 0, cuota_iva_0_no_ex = 0;\n  let base_iva_0_no_sujeto = 0, cuota_iva_0_no_sujeto = 0;\n\n  if (datos.desglose_iva && Array.isArray(datos.desglose_iva)) {\n    for (const linea of datos.desglose_iva) {\n      const tipo = Number(linea.tipo_iva);\n      const base = Number(linea.base) || 0;\n      const cuota = Number(linea.cuota) || 0;\n      const exencion = (linea.tipo_exencion || \"exento\").toLowerCase();\n\n      if (tipo === 21) { base_iva_21 += base; cuota_iva_21 += cuota; }\n      else if (tipo === 12) { base_iva_12 += base; cuota_iva_12 += cuota; }\n      else if (tipo === 10.5) { base_iva_10_5 += base; cuota_iva_10_5 += cuota; }\n      else if (tipo === 10) { base_iva_10 += base; cuota_iva_10 += cuota; }\n      else if (tipo === 5) { base_iva_5 += base; cuota_iva_5 += cuota; }\n      else if (tipo === 4) { base_iva_4 += base; cuota_iva_4 += cuota; }\n      else if (tipo === 0) {\n        if (exencion === \"no_sujeto\") { base_iva_0_no_sujeto += base; cuota_iva_0_no_sujeto += cuota; }\n        else if (exencion === \"no_exento\") { base_iva_0_no_ex += base; cuota_iva_0_no_ex += cuota; }\n        else { base_iva_0 += base; cuota_iva_0 += cuota; }\n      }\n    }\n  }\n\n  let tipo_iva_principal = 21, max_base = 0;\n  if (datos.desglose_iva && Array.isArray(datos.desglose_iva)) {\n    for (const linea of datos.desglose_iva) {\n      if (Number(linea.base) > max_base) { max_base = Number(linea.base); tipo_iva_principal = Number(linea.tipo_iva); }\n    }\n  }\n\n  const cuotaIvaTotal = datos.total_iva ||\n    (datos.desglose_iva ? datos.desglose_iva.reduce((sum, d) => sum + (Number(d.cuota) || 0), 0) : 0);\n\n  return [{\n    json: {\n      ...datos,\n      tipo_documento: datos.tipo_documento || \"compra\",\n      tipo_iva_principal,\n      cuota_iva_total: cuotaIvaTotal,\n      base_iva_21, cuota_iva_21,\n      base_iva_12, cuota_iva_12,\n      base_iva_10_5, cuota_iva_10_5,\n      base_iva_10, cuota_iva_10,\n      base_iva_5, cuota_iva_5,\n      base_iva_4, cuota_iva_4,\n      base_iva_0, cuota_iva_0,\n      base_iva_0_no_ex, cuota_iva_0_no_ex,\n      base_iva_0_no_sujeto, cuota_iva_0_no_sujeto,\n      metodo_pago: datos.forma_pago || datos.metodo_pago || \"\",\n      pct_retencion: datos.retencion_irpf ? datos.retencion_irpf.porcentaje : 0,\n      retencion: datos.retencion_irpf ? datos.retencion_irpf.cuota : 0,\n      raw_response: textContent,\n      parse_ok: true,\n      pct_req: datos.recargo_equivalencia ? datos.recargo_equivalencia.porcentaje : 0,\n      cuota_req: datos.recargo_equivalencia ? datos.recargo_equivalencia.cuota : 0\n    }\n  }];\n} catch (e) {\n  return [{ json: { parse_ok: false, error: e.message, raw_response: textContent, confianza: 0 } }];\n}"
+      },
+      "id": "9a2f504e-6ddf-4141-9b12-cfab0fd2a8c1",
+      "name": "5. Parsear Respuesta IA",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4416,
+        3472
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "parse-check",
+              "leftValue": "={{ $json.parse_ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a8f0c10e-1b43-4f7a-8833-363e5408aa41",
+      "name": "6. Parse OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        4640,
+        3376
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT *, id AS \"Id\" FROM proveedores WHERE empresa_id = {{ parseInt($('1. Webhook Recibir Factura2').first().json.body.empresa_id) || 0 }}",
+        "options": {}
+      },
+      "id": "6e78e474-03b7-4bbe-8110-11840e52a7cd",
+      "name": "7a. Buscar Proveedor",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        5312,
+        3280
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "CREATE_ME",
+          "name": "Kontia PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT *, id AS \"Id\" FROM reglas WHERE empresa_id = {{ parseInt($('1. Webhook Recibir Factura2').first().json.body.empresa_id) || 0 }}",
+        "options": {}
+      },
+      "id": "9fe28ee2-2775-404d-9717-4df05a1030f7",
+      "name": "7b. Buscar Reglas",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        5312,
+        3472
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "CREATE_ME",
+          "name": "Kontia PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll",
+        "options": {}
+      },
+      "id": "0c9f6bf2-af91-47dd-b2fa-c3bca8029f44",
+      "name": "8. Merge Datos",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        5536,
+        3472
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "tercero-check",
+              "leftValue": "={{ $json.tercero_nuevo }}",
+              "rightValue": "0",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f3b94f32-c2f9-4d12-8205-341de3ab3ed5",
+      "name": "9b. Proveedor Nuevo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        5984,
+        3472
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=INSERT INTO proveedores (nif_proveedor, nombre_proveedor, cuenta_gasto, cuenta_proveedor, tipo_retencion, empresa_id) VALUES ('{{ ($('9. Decidir Cuenta Contable1').first().json.nif_emisor || '').replace(/[^A-Z0-9]/gi, '').substring(0, 20) }}', '{{ ($('9. Decidir Cuenta Contable1').first().json.nombre_emisor || '').replace(/'/g, \"''\").substring(0, 300) }}', '{{ ($('9. Decidir Cuenta Contable1').first().json.cuenta_gasto || '629').replace(/[^0-9]/g, '').substring(0, 10) }}', '400', '{{ $('9. Decidir Cuenta Contable1').first().json.tipo_retencion > 0 ? $('9. Decidir Cuenta Contable1').first().json.tipo_retencion + \"%\" : \"Sin retención\" }}', {{ parseInt($('1. Webhook Recibir Factura2').first().json.body.empresa_id || $('1. Webhook Recibir Factura2').first().json.body.empresa_carpeta) || 0 }}) RETURNING *, id AS \"Id\"",
+        "options": {}
+      },
+      "id": "cf8e9c31-a9ea-415d-8218-e70b6b8f4b30",
+      "name": "9c. Crear Proveedor Nuevo",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        6432,
+        3100
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "CREATE_ME",
+          "name": "Kontia PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"factura_id\": {{ $('2. Crear Factura PostgreSQL').first().json.Id }},\n  \"datos\": {\n    \"numero\": \"{{ $('9. Decidir Cuenta Contable1').first().json.numero_factura }}\",\n    \"proveedor\": \"{{ $('9. Decidir Cuenta Contable1').first().json.nombre_emisor }}\",\n    \"nif\": \"{{ $('9. Decidir Cuenta Contable1').first().json.nif_emisor }}\",\n    \"tipo_documento\": \"{{ $('9. Decidir Cuenta Contable1').first().json.tipo_documento || 'compra' }}\",\n    \"base\": {{ $('9. Decidir Cuenta Contable1').first().json.base_imponible || 0 }},\n    \"iva\": {{ $('9. Decidir Cuenta Contable1').first().json.cuota_iva || 0 }},\n    \"total\": {{ $('9. Decidir Cuenta Contable1').first().json.total_factura || 0 }},\n    \"cuenta\": \"{{ $('9. Decidir Cuenta Contable1').first().json.cuenta_gasto }}\",\n    \"origen\": \"{{ $('9. Decidir Cuenta Contable1').first().json.origen_cuenta }}\",\n    \"confianza\": {{ $('9. Decidir Cuenta Contable1').first().json.confianza || 3 }},\n    \"desglose_iva\": {\n      \"iva_21\": { \"base\": {{ $('9. Decidir Cuenta Contable1').first().json.base_iva_21 || 0 }}, \"cuota\": {{ $('9. Decidir Cuenta Contable1').first().json.cuota_iva_21 || 0 }} },\n      \"iva_12\": { \"base\": {{ $('9. Decidir Cuenta Contable1').first().json.base_iva_12 || 0 }}, \"cuota\": {{ $('9. Decidir Cuenta Contable1').first().json.cuota_iva_12 || 0 }} },\n      \"iva_10_5\": { \"base\": {{ $('9. Decidir Cuenta Contable1').first().json.base_iva_10_5 || 0 }}, \"cuota\": {{ $('9. Decidir Cuenta Contable1').first().json.cuota_iva_10_5 || 0 }} },\n      \"iva_10\": { \"base\": {{ $('9. Decidir Cuenta Contable1').first().json.base_iva_10 || 0 }}, \"cuota\": {{ $('9. Decidir Cuenta Contable1').first().json.cuota_iva_10 || 0 }} },\n      \"iva_5\": { \"base\": {{ $('9. Decidir Cuenta Contable1').first().json.base_iva_5 || 0 }}, \"cuota\": {{ $('9. Decidir Cuenta Contable1').first().json.cuota_iva_5 || 0 }} },\n      \"iva_4\": { \"base\": {{ $('9. Decidir Cuenta Contable1').first().json.base_iva_4 || 0 }}, \"cuota\": {{ $('9. Decidir Cuenta Contable1').first().json.cuota_iva_4 || 0 }} },\n      \"iva_0\": { \"base\": {{ $('9. Decidir Cuenta Contable1').first().json.base_iva_0 || 0 }}, \"cuota\": {{ $('9. Decidir Cuenta Contable1').first().json.cuota_iva_0 || 0 }} },\n      \"iva_0_no_ex\": { \"base\": {{ $('9. Decidir Cuenta Contable1').first().json.base_iva_0_no_ex || 0 }}, \"cuota\": {{ $('9. Decidir Cuenta Contable1').first().json.cuota_iva_0_no_ex || 0 }} },\n      \"iva_0_no_sujeto\": { \"base\": {{ $('9. Decidir Cuenta Contable1').first().json.base_iva_0_no_sujeto || 0 }}, \"cuota\": {{ $('9. Decidir Cuenta Contable1').first().json.cuota_iva_0_no_sujeto || 0 }} }\n    }\n  }\n}",
+        "options": {}
+      },
+      "id": "75896d72-74f5-4ee9-a6c3-6a2a14b34c5a",
+      "name": "12. Responder al Portal",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        7104,
+        3472
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=UPDATE facturas SET estado = 'error', datos_raw = '{{ $if($('5. Parsear Respuesta IA').isExecuted, ($('5. Parsear Respuesta IA').first().json.raw_response || 'parse_failed'), $if($('5-PDF. Parsear Claude1').isExecuted, ($('5-PDF. Parsear Claude1').first().json.raw_response || 'parse_failed'), 'parse_failed')).toString().replace(/'/g, \"''\").substring(0, 5000) }}' WHERE id = {{ $('2. Crear Factura PostgreSQL').first().json.Id }}",
+        "options": {}
+      },
+      "id": "31b17ea2-82c1-4a49-86ca-3b8da5de07b6",
+      "name": "ERROR: Marcar Error PostgreSQL",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        4864,
+        3280
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "CREATE_ME",
+          "name": "Kontia PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": false,\n  \"factura_id\": {{ $('2. Crear Factura PostgreSQL').first().json.Id }},\n  \"error\": \"Error procesando factura\"\n}",
+        "options": {
+          "responseCode": 422
+        }
+      },
+      "id": "20db5a36-9d65-449e-b4e6-3be161463c72",
+      "name": "ERROR: Responder",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        5088,
+        3280
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "876574ff-dc8f-465e-8b8a-eafafae2725c",
+      "name": "No-Op (proveedor existe)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        6208,
+        3664
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"gpt-4o-mini\",\n  \"max_tokens\": 2000,\n  \"response_format\": { \"type\": \"json_object\" },\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"Eres un experto contable español. Responde SOLO con JSON válido, sin markdown.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": [\n        {\n          \"type\": \"image_url\",\n          \"image_url\": {\n            \"url\": \"data:{{ $('1. Webhook Recibir Factura2').first().json.body.media_type }};base64,{{ $('1. Webhook Recibir Factura2').first().json.body.archivo_base64 }}\"\n          }\n        },\n        {\n          \"type\": \"text\",\n          \"text\": \"Analiza esta factura y extrae TODOS los datos en este JSON exacto:\\n{\\n  \\\"numero_factura\\\": \\\"string\\\",\\n  \\\"fecha_factura\\\": \\\"YYYY-MM-DD\\\",\\n  \\\"nif_emisor\\\": \\\"string sin espacios ni guiones\\\",\\n  \\\"nombre_emisor\\\": \\\"razón social proveedor\\\",\\n  \\\"nif_receptor\\\": \\\"string\\\",\\n  \\\"nombre_receptor\\\": \\\"string\\\",\\n  \\\"tipo_documento\\\": \\\"compra, venta o rectificativa\\\",\\n  \\\"conceptos\\\": [{\\\"descripcion\\\": \\\"string\\\", \\\"cantidad\\\": 0, \\\"precio_unitario\\\": 0, \\\"importe\\\": 0}],\\n  \\\"base_imponible\\\": 0,\\n  \\\"desglose_iva\\\": [{\\\"tipo_iva\\\": 0, \\\"base\\\": 0, \\\"cuota\\\": 0}],\\n  \\\"total_iva\\\": 0,\\n  \\\"retencion_irpf\\\": {\\\"porcentaje\\\": 0, \\\"base\\\": 0, \\\"cuota\\\": 0},\\n  \\\"recargo_equivalencia\\\": {\\\"porcentaje\\\": 0, \\\"cuota\\\": 0},\\n  \\\"total_factura\\\": 0,\\n  \\\"forma_pago\\\": \\\"string\\\",\\n  \\\"cuenta_bancaria\\\": \\\"IBAN si aparece\\\",\\n  \\\"es_intracomunitaria\\\": false,\\n  \\\"es_inversion_sujeto_pasivo\\\": false,\\n  \\\"cuenta_gasto_sugerida\\\": \\\"PGC 3 dígitos\\\",\\n  \\\"confianza\\\": 0\\n}\\n\\nCuentas PGC: 600=compras mercaderías, 621=arrendamientos, 622=reparaciones, 623=servicios profesionales, 624=transportes, 625=seguros, 626=servicios bancarios, 627=publicidad, 628=suministros (luz/agua/gas/teléfono), 629=otros servicios, 631=otros tributos.\\n\\ntipo_documento: \\\"compra\\\" si es factura recibida de proveedor (gasto), \\\"venta\\\" si es emitida a cliente (ingreso), \\\"rectificativa\\\" si es una factura rectificativa o de abono (busca las palabras rectificativa/abono/credit note o importes negativos). Por defecto \\\"compra\\\". IMPORTANTE: en rectificativas devuelve SIEMPRE todos los importes en POSITIVO (valor absoluto).\\ndesglose_iva: incluye SOLO los tipos de IVA presentes en la factura. tipo_iva es el PORCENTAJE (21, 10, 4, 0).\\nReglas: campo inexistente=null. Importes con 2 decimales. NIF sin espacios. Fecha YYYY-MM-DD. Retención IRPF habitual: 15% profesionales, 19% alquileres.\"\n        }\n      ]\n    }\n  ]\n}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "7eb76d7b-6c8a-4f25-b8cf-92e3d3b14817",
+      "name": "4. OpenAI Vision OCR1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        4192,
+        3472
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "XRUziTOYoVXHpEAy",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const webhook = $('1. Webhook Recibir Factura2').first().json;\nconst base64Data = webhook.body.archivo_base64;\nconst fileName = webhook.body.archivo_nombre || 'factura.pdf';\nconst mimeType = webhook.body.media_type || 'application/pdf';\nconst carpeta = webhook.body.empresa_carpeta || 'general';\n\nconst binaryData = Buffer.from(base64Data, 'base64');\n\nreturn [{\n  json: {\n    archivo_nombre: fileName,\n    carpeta: carpeta,\n    media_type: mimeType,\n    upload_url: `https://manuel-minio.sgaz6n.easypanel.host/facturas/${carpeta}/${encodeURIComponent(fileName)}`\n  },\n  binary: {\n    data: await this.helpers.prepareBinaryData(binaryData, fileName, mimeType)\n  }\n}];"
+      },
+      "id": "71407fea-b184-487b-972d-fe1262e8175c",
+      "name": "3a. Preparar Archivo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3520,
+        3376
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ $json.upload_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "={{ $json.media_type }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "69cdf8d6-ec41-44d2-862f-1d8604de18a6",
+      "name": "3b. Subir a MinIO",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3744,
+        3376
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=UPDATE facturas SET estado = 'pendiente', numero_factura = '{{ ($('9. Decidir Cuenta Contable1').first().json.numero_factura || '').replace(/'/g, \"''\").substring(0, 100) }}', fecha_factura = NULLIF('{{ String($('9. Decidir Cuenta Contable1').first().json.fecha_factura || '').replace(/[^0-9-]/g, '') }}', '')::date, nif_emisor = '{{ ($('9. Decidir Cuenta Contable1').first().json.nif_emisor || '').replace(/[^A-Z0-9]/gi, '').substring(0, 20) }}', nombre_emisor = '{{ ($('9. Decidir Cuenta Contable1').first().json.nombre_emisor || '').replace(/'/g, \"''\") }}', tipo_documento = '{{ ($('9. Decidir Cuenta Contable1').first().json.tipo_documento || 'compra').replace(/[^a-z_]/gi, '').substring(0, 30) || 'compra' }}', base_imponible = {{ Number($('9. Decidir Cuenta Contable1').first().json.base_imponible) || 0 }}, tipo_iva = {{ $('9. Decidir Cuenta Contable1').first().json.tipo_iva || 0 }}, cuota_iva = {{ Number($('9. Decidir Cuenta Contable1').first().json.cuota_iva) || 0 }}, base_iva_21 = {{ $('9. Decidir Cuenta Contable1').first().json.base_iva_21 || 0 }}, cuota_iva_21 = {{ $('9. Decidir Cuenta Contable1').first().json.cuota_iva_21 || 0 }}, base_iva_10 = {{ $('9. Decidir Cuenta Contable1').first().json.base_iva_10 || 0 }}, cuota_iva_10 = {{ $('9. Decidir Cuenta Contable1').first().json.cuota_iva_10 || 0 }}, base_iva_4 = {{ $('9. Decidir Cuenta Contable1').first().json.base_iva_4 || 0 }}, cuota_iva_4 = {{ $('9. Decidir Cuenta Contable1').first().json.cuota_iva_4 || 0 }}, base_iva_0 = {{ $('9. Decidir Cuenta Contable1').first().json.base_iva_0 || 0 }}, cuota_iva_0 = {{ $('9. Decidir Cuenta Contable1').first().json.cuota_iva_0 || 0 }}, tipo_retencion = '{{ String($('9. Decidir Cuenta Contable1').first().json.tipo_retencion || 0).replace(/[^0-9A-Za-z._ -]/g, '') }}', cuota_retencion = {{ $('9. Decidir Cuenta Contable1').first().json.cuota_retencion || 0 }}, total_factura = {{ Number($('9. Decidir Cuenta Contable1').first().json.total_factura) || 0 }}, cuenta_gasto = '{{ ($('9. Decidir Cuenta Contable1').first().json.cuenta_gasto || '629').replace(/[^0-9]/g, '').substring(0, 10) || '629' }}', confianza_ia = {{ Number($('9. Decidir Cuenta Contable1').first().json.confianza) || 3 }}, archivo_url = '{{ ($('3a. Preparar Archivo').first().json.upload_url || '').replace(/'/g, \"''\").substring(0, 500) }}', metodo_pago = '{{ ($('9. Decidir Cuenta Contable1').first().json.metodo_pago || '').replace(/'/g, \"''\").substring(0, 50) }}', pct_retencion = {{ $('9. Decidir Cuenta Contable1').first().json.pct_retencion || 0 }}, base_iva_12 = {{ $('9. Decidir Cuenta Contable1').first().json.base_iva_12 || 0 }}, cuota_iva_12 = {{ $('9. Decidir Cuenta Contable1').first().json.cuota_iva_12 || 0 }}, base_iva_10_5 = {{ $('9. Decidir Cuenta Contable1').first().json.base_iva_10_5 || 0 }}, cuota_iva_10_5 = {{ $('9. Decidir Cuenta Contable1').first().json.cuota_iva_10_5 || 0 }}, base_iva_5 = {{ $('9. Decidir Cuenta Contable1').first().json.base_iva_5 || 0 }}, cuota_iva_5 = {{ $('9. Decidir Cuenta Contable1').first().json.cuota_iva_5 || 0 }}, base_iva_0_no_ex = {{ $('9. Decidir Cuenta Contable1').first().json.base_iva_0_no_ex || 0 }}, cuota_iva_0_no_ex = {{ $('9. Decidir Cuenta Contable1').first().json.cuota_iva_0_no_ex || 0 }}, base_iva_0_no_sujeto = {{ $('9. Decidir Cuenta Contable1').first().json.base_iva_0_no_sujeto || 0 }}, cuota_iva_0_no_sujeto = {{ $('9. Decidir Cuenta Contable1').first().json.cuota_iva_0_no_sujeto || 0 }}, nif_receptor = '{{ ($('9. Decidir Cuenta Contable1').first().json.nif_receptor || '').replace(/[^A-Z0-9]/gi, '').substring(0, 20) }}', nombre_receptor = '{{ ($('9. Decidir Cuenta Contable1').first().json.nombre_receptor || '').replace(/'/g, \"''\") }}', proveedor_id = {{ $('9. Decidir Cuenta Contable1').first().json.proveedor_id || 'NULL' }}, cliente_id = {{ $('9. Decidir Cuenta Contable1').first().json.cliente_id || 'NULL' }}, pct_req = {{ $('9. Decidir Cuenta Contable1').first().json.pct_req || 0 }}, cuota_req = {{ $('9. Decidir Cuenta Contable1').first().json.cuota_req || 0 }}, datos_raw = '{{ JSON.stringify($('9. Decidir Cuenta Contable1').first().json.raw_response || '').replace(/'/g, \"''\").substring(0, 5000) }}' WHERE id = {{ $('2. Crear Factura PostgreSQL').first().json.Id }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        6880,
+        3472
+      ],
+      "id": "16f03e83-03d7-4ea7-8623-9211a17ef29d",
+      "name": "11. Actualizar Factura PostgreSQL",
+      "credentials": {
+        "postgres": {
+          "id": "CREATE_ME",
+          "name": "Kontia PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT COUNT(*)::int AS cnt FROM facturas WHERE nif_emisor = '{{ ($if($('5. Parsear Respuesta IA').isExecuted, $('5. Parsear Respuesta IA').first().json.nif_emisor, $('5-PDF. Parsear Claude1').first().json.nif_emisor) || '').replace(/'/g, \"''\").replace(/[^A-Z0-9]/gi, '').substring(0, 20) }}' AND numero_factura = '{{ ($if($('5. Parsear Respuesta IA').isExecuted, $('5. Parsear Respuesta IA').first().json.numero_factura, $('5-PDF. Parsear Claude1').first().json.numero_factura) || '').replace(/'/g, \"''\").substring(0, 100) }}' AND estado != 'error' AND empresa_id = {{ parseInt($('1. Webhook Recibir Factura2').first().json.body.empresa_id || $('1. Webhook Recibir Factura2').first().json.body.empresa_carpeta) || 0 }} AND id != {{ parseInt($('2. Crear Factura PostgreSQL').first().json.Id) }}",
+        "options": {}
+      },
+      "id": "2a24f16a-167e-4bd0-a684-660f8037daa8",
+      "name": "5b. Buscar Duplicados",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        4864,
+        3472
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "CREATE_ME",
+          "name": "Kontia PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": false,\n  \"error\": \"duplicada\",\n  \"mensaje\": \"Esta factura ya fue procesada anteriormente\"\n}",
+        "options": {
+          "responseCode": 409
+        }
+      },
+      "id": "5e6269c9-03bb-4f18-a7a9-636bcfc78791",
+      "name": "DUPLICADA: Responder",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        5536,
+        3664
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Datos extraidos por la IA - con guard isExecuted\nlet ia;\ntry {\n  if ($('5-PDF. Parsear Claude1').isExecuted) {\n    ia = $('5-PDF. Parsear Claude1').first().json;\n  } else {\n    ia = $('5. Parsear Respuesta IA').first().json;\n  }\n} catch(e) {\n  try { ia = $('5. Parsear Respuesta IA').first().json; } catch(e2) {\n    try { ia = $('5-PDF. Parsear Claude1').first().json; } catch(e3) {\n      ia = { parse_ok: false, confianza: 0 };\n    }\n  }\n}\n\n// Obtener CIF de la empresa desde config\nlet cifEmpresa = '';\ntry {\n  const configItems = $('7d. Buscar Config Empresa').all();\n  if (configItems.length > 0 && configItems[0].json.cif_empresa) {\n    cifEmpresa = configItems[0].json.cif_empresa.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');\n  }\n} catch(e) {\n  cifEmpresa = '';\n}\n\nconst nifEmisorRaw = (ia.nif_emisor || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');\nconst nifReceptorRaw = (ia.nif_receptor || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');\n\n// Determinar tipo_documento comparando CIF empresa con emisor/receptor\nlet tipoDoc;\nconst esRectificativa = (ia.tipo_documento || '').toLowerCase() === 'rectificativa';\nif (cifEmpresa && !esRectificativa) {\n  if (cifEmpresa === nifEmisorRaw) {\n    tipoDoc = 'venta';\n  } else if (cifEmpresa === nifReceptorRaw) {\n    tipoDoc = 'compra';\n  } else {\n    tipoDoc = (ia.tipo_documento || 'compra').toLowerCase();\n  }\n} else {\n  tipoDoc = (ia.tipo_documento || 'compra').toLowerCase();\n}\nconst esVenta = tipoDoc === 'venta';\n\n// PROVEEDORES (para facturas de compra)\nconst provItems = $('7a. Buscar Proveedor').all().filter(i => i.json.Id);\n\n// CLIENTES (para facturas de venta)\nlet clienteItems = [];\ntry {\n  clienteItems = $('7c. Buscar Clientes').all().filter(i => i.json.Id);\n} catch(e) {\n  clienteItems = [];\n}\n\nconst nombreIA = (ia.nombre_emisor || '').trim().toLowerCase();\nconst nifIA = (ia.nif_emisor || '').trim().toUpperCase();\nconst nifValido = nifIA && nifIA !== 'SINNIF' && nifIA !== 'N/A' && nifIA !== 'NULL' && nifIA !== '';\n\n// Para venta: el receptor es el cliente\nconst nombreReceptor = (ia.nombre_receptor || '').trim().toLowerCase();\nconst nifReceptor = (ia.nif_receptor || '').trim().toUpperCase();\nconst nifReceptorValido = nifReceptor && nifReceptor !== 'SINNIF' && nifReceptor !== 'N/A' && nifReceptor !== 'NULL' && nifReceptor !== '';\n\nlet proveedor = null;\nlet cliente = null;\nlet proveedorExiste = false;\nlet clienteExiste = false;\nlet terceroNuevo = false;\n\nif (esVenta) {\n  // Buscar cliente por NIF del receptor\n  if (nifReceptorValido) {\n    cliente = clienteItems.find(i => (i.json.nif || '').toUpperCase() === nifReceptor)?.json || null;\n  }\n  if (!cliente && nombreReceptor) {\n    cliente = clienteItems.find(i => (i.json.nombre || '').trim().toLowerCase() === nombreReceptor)?.json || null;\n  }\n  clienteExiste = !!cliente;\n  terceroNuevo = !clienteExiste;\n} else {\n  // Buscar proveedor por NIF del emisor\n  if (nifValido) {\n    proveedor = provItems.find(i => (i.json.nif_proveedor || '').toUpperCase() === nifIA)?.json || null;\n  }\n  if (!proveedor && nombreIA) {\n    proveedor = provItems.find(i => (i.json.nombre_proveedor || '').trim().toLowerCase() === nombreIA)?.json || null;\n  }\n  proveedorExiste = !!proveedor;\n  terceroNuevo = !proveedorExiste;\n}\n\n// REGLAS de asignacion de cuenta\nconst reglaItems = $('7b. Buscar Reglas').all();\nconst reglas = reglaItems.map(i => i.json).filter(r => r.Id);\n\nlet cuenta_gasto = ia.cuenta_gasto_sugerida || (esVenta ? '700' : '629');\nlet origen_cuenta = 'ia';\n\n// Para ventas, forzar cuenta de ingreso si la IA sugiere gasto\nif (esVenta && !cuenta_gasto.startsWith('7')) {\n  cuenta_gasto = '700';\n}\n\nconst nifBuscar = esVenta ? nifReceptor : nifIA;\nconst nifBuscarValido = esVenta ? nifReceptorValido : nifValido;\n\nif (nifBuscarValido) {\n  const reglaNif = reglas.find(r => r.tipo_regla === 'por_nif' && r.condicion && r.condicion.toUpperCase() === nifBuscar);\n  if (reglaNif) { cuenta_gasto = reglaNif.cuenta_gasto; origen_cuenta = 'regla_nif'; }\n}\nif (origen_cuenta === 'ia') {\n  const textoFactura = ((ia.nombre_emisor || '') + ' ' + (ia.nombre_receptor || '') + ' ' + (ia.conceptos ? ia.conceptos.map(c => c.descripcion).join(' ') : '')).toLowerCase();\n  const reglaConcepto = reglas.find(r => (r.tipo_regla === 'por_concepto' || r.tipo_regla === 'por_nombre') && r.condicion && textoFactura.includes(r.condicion.toLowerCase()));\n  if (reglaConcepto) { cuenta_gasto = reglaConcepto.cuenta_gasto; origen_cuenta = 'regla_concepto'; }\n  else if (!esVenta && proveedorExiste && proveedor.cuenta_gasto) { cuenta_gasto = proveedor.cuenta_gasto; origen_cuenta = 'proveedor'; }\n  else if (esVenta && clienteExiste && cliente.cuenta_ingresos) { cuenta_gasto = cliente.cuenta_ingresos; origen_cuenta = 'cliente'; }\n}\n\nreturn [{\n  json: {\n    numero_factura: ia.numero_factura, fecha_factura: ia.fecha_factura,\n    nif_emisor: ia.nif_emisor, nombre_emisor: ia.nombre_emisor,\n    nif_receptor: ia.nif_receptor || '', nombre_receptor: ia.nombre_receptor || '',\n    base_imponible: ia.base_imponible, tipo_iva: ia.tipo_iva_principal,\n    cuota_iva: ia.cuota_iva_total,\n    tipo_retencion: ia.pct_retencion || ia.retencion_porcentaje || 0,\n    cuota_retencion: ia.retencion || ia.retencion_cuota || 0,\n    total_factura: ia.total_factura,\n    cuenta_gasto, origen_cuenta,\n    proveedor_existe: proveedorExiste,\n    proveedor_id: proveedorExiste ? proveedor.Id : null,\n    cliente_existe: clienteExiste,\n    cliente_id: clienteExiste ? cliente.Id : null,\n    tercero_nuevo: terceroNuevo,\n    confianza: ia.confianza || 3, raw_response: ia.raw_response,\n    tipo_documento: tipoDoc,\n    metodo_pago: ia.metodo_pago || '',\n    pct_retencion: ia.pct_retencion || 0,\n    retencion: ia.retencion || 0,\n    base_iva_21: ia.base_iva_21 || 0, cuota_iva_21: ia.cuota_iva_21 || 0,\n    base_iva_12: ia.base_iva_12 || 0, cuota_iva_12: ia.cuota_iva_12 || 0,\n    base_iva_10_5: ia.base_iva_10_5 || 0, cuota_iva_10_5: ia.cuota_iva_10_5 || 0,\n    base_iva_10: ia.base_iva_10 || 0, cuota_iva_10: ia.cuota_iva_10 || 0,\n    base_iva_5: ia.base_iva_5 || 0, cuota_iva_5: ia.cuota_iva_5 || 0,\n    base_iva_4: ia.base_iva_4 || 0, cuota_iva_4: ia.cuota_iva_4 || 0,\n    base_iva_0: ia.base_iva_0 || 0, cuota_iva_0: ia.cuota_iva_0 || 0,\n    base_iva_0_no_ex: ia.base_iva_0_no_ex || 0, cuota_iva_0_no_ex: ia.cuota_iva_0_no_ex || 0,\n    base_iva_0_no_sujeto: ia.base_iva_0_no_sujeto || 0, cuota_iva_0_no_sujeto: ia.cuota_iva_0_no_sujeto || 0,\n    pct_req: ia.pct_req || 0,\n    cuota_req: ia.cuota_req || 0\n  }\n}];"
+      },
+      "id": "dca1219e-8d89-4cb1-994f-ea883f8e774d",
+      "name": "9. Decidir Cuenta Contable1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5760,
+        3472
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT *, id AS \"Id\" FROM clientes WHERE empresa_id = {{ parseInt($('1. Webhook Recibir Factura2').first().json.body.empresa_id) || 0 }}",
+        "options": {}
+      },
+      "id": "c7d8e9f0-1a2b-3c4d-5e6f-7a8b9c0d1e2f",
+      "name": "7c. Buscar Clientes",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        5312,
+        3100
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "CREATE_ME",
+          "name": "Kontia PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "tipo-check",
+              "leftValue": "={{ $json.tipo_documento }}",
+              "rightValue": "compra",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d",
+      "name": "9c-if. Es Compra?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        6208,
+        3280
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=INSERT INTO clientes (nif, nombre, cuenta_ingresos, cuenta_cliente, empresa_id) VALUES ('{{ ($('9. Decidir Cuenta Contable1').first().json.nif_receptor || '').replace(/[^A-Z0-9]/gi, '').substring(0, 20) }}', '{{ ($('9. Decidir Cuenta Contable1').first().json.nombre_receptor || '').replace(/'/g, \"''\").substring(0, 300) }}', '{{ ($('9. Decidir Cuenta Contable1').first().json.cuenta_gasto || '700').replace(/[^0-9]/g, '').substring(0, 10) }}', '430', {{ parseInt($('1. Webhook Recibir Factura2').first().json.body.empresa_id || $('1. Webhook Recibir Factura2').first().json.body.empresa_carpeta) || 0 }}) RETURNING *, id AS \"Id\"",
+        "options": {}
+      },
+      "id": "d4e5f6a7-b8c9-0d1e-2f3a-4b5c6d7e8f9a",
+      "name": "9d. Crear Cliente Nuevo",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        6432,
+        3472
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "CREATE_ME",
+          "name": "Kontia PostgreSQL"
+        }
+      }
+    }
+,
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT *, id AS \"Id\" FROM config WHERE empresa_id = {{ parseInt($('1. Webhook Recibir Factura2').first().json.body.empresa_id) || 0 }}",
+        "options": {}
+      },
+      "id": "e5f6a7b8-c9d0-1e2f-3a4b-5c6d7e8f9a0b",
+      "name": "7d. Buscar Config Empresa",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        5312,
+        3480
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "CREATE_ME",
+          "name": "Kontia PostgreSQL"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "1. Webhook Recibir Factura2": {
+      "main": [
+        [
+          {
+            "node": "2. Crear Factura PostgreSQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3c. Es PDF?1": {
+      "main": [
+        [
+          {
+            "node": "4b. Claude PDF OCR1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "4. OpenAI Vision OCR1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4b. Claude PDF OCR1": {
+      "main": [
+        [
+          {
+            "node": "5-PDF. Parsear Claude1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "5-PDF. Parsear Claude1": {
+      "main": [
+        [
+          {
+            "node": "6. Parse OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "5c. No Duplicada?1": {
+      "main": [
+        [
+          {
+            "node": "7a. Buscar Proveedor",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "7b. Buscar Reglas",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "7c. Buscar Clientes",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "7d. Buscar Config Empresa",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "DUPLICADA: Marcar PostgreSQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DUPLICADA: Marcar PostgreSQL": {
+      "main": [
+        [
+          {
+            "node": "DUPLICADA: Responder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2. Crear Factura PostgreSQL": {
+      "main": [
+        [
+          {
+            "node": "3a. Preparar Archivo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "5. Parsear Respuesta IA": {
+      "main": [
+        [
+          {
+            "node": "6. Parse OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "6. Parse OK?": {
+      "main": [
+        [
+          {
+            "node": "5b. Buscar Duplicados",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "ERROR: Marcar Error PostgreSQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "7a. Buscar Proveedor": {
+      "main": [
+        [
+          {
+            "node": "8. Merge Datos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "7b. Buscar Reglas": {
+      "main": [
+        [
+          {
+            "node": "8. Merge Datos",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "8. Merge Datos": {
+      "main": [
+        [
+          {
+            "node": "9. Decidir Cuenta Contable1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "9b. Proveedor Nuevo?": {
+      "main": [
+        [
+          {
+            "node": "9c-if. Es Compra?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No-Op (proveedor existe)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "9c. Crear Proveedor Nuevo": {
+      "main": [
+        [
+          {
+            "node": "11. Actualizar Factura PostgreSQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ERROR: Marcar Error PostgreSQL": {
+      "main": [
+        [
+          {
+            "node": "ERROR: Responder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "No-Op (proveedor existe)": {
+      "main": [
+        [
+          {
+            "node": "11. Actualizar Factura PostgreSQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4. OpenAI Vision OCR1": {
+      "main": [
+        [
+          {
+            "node": "5. Parsear Respuesta IA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3a. Preparar Archivo": {
+      "main": [
+        [
+          {
+            "node": "3b. Subir a MinIO",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3b. Subir a MinIO": {
+      "main": [
+        [
+          {
+            "node": "3c. Es PDF?1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "11. Actualizar Factura PostgreSQL": {
+      "main": [
+        [
+          {
+            "node": "12. Responder al Portal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "5b. Buscar Duplicados": {
+      "main": [
+        [
+          {
+            "node": "5c. No Duplicada?1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "9. Decidir Cuenta Contable1": {
+      "main": [
+        [
+          {
+            "node": "9b. Proveedor Nuevo?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "9c-if. Es Compra?": {
+      "main": [
+        [
+          {
+            "node": "9c. Crear Proveedor Nuevo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "9d. Crear Cliente Nuevo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "9d. Crear Cliente Nuevo": {
+      "main": [
+        [
+          {
+            "node": "11. Actualizar Factura PostgreSQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "b880009e-352c-453b-ba09-fd91d79e647c",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "f327dfd493c80fca4f650a08e96d3ff3a416159f8af51aeabdfa008b14e550c4"
+  },
+  "nodeGroups": [],
+  "id": "8XIpymiCqZGowt1Z",
+  "tags": []
+}

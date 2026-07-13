@@ -404,6 +404,23 @@ router.post('/facturas/:id/contabilizar', async (req, res) => {
         return res.status(422).json({ error: 'Asiento descuadrado tras el cálculo. Revisa los importes de la factura.' });
       }
 
+      // Rectificativas: asiento inverso (abono). Convención del pipeline: los importes
+      // llegan en positivo y aquí se intercambia debe<->haber (el cuadre se preserva).
+      // Desactivable por empresa vía config.cambio_signo_rectificativas.
+      if (row.tipo_documento === 'rectificativa') {
+        const cfgRect = await client.query(
+          'SELECT cambio_signo_rectificativas FROM config WHERE empresa_id = $1',
+          [req.user.empresa_id]
+        );
+        if (cfgRect.rows[0]?.cambio_signo_rectificativas !== false) {
+          for (const ap of apuntes) {
+            const d = ap.debe;
+            ap.debe = ap.haber;
+            ap.haber = d;
+          }
+        }
+      }
+
       for (const ap of apuntes) {
         await client.query(
           'INSERT INTO apuntes (asiento_id, cuenta, debe, haber, concepto) VALUES ($1,$2,$3,$4,$5)',

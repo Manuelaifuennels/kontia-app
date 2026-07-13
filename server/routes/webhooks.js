@@ -80,7 +80,12 @@ router.post('/:endpoint', async (req, res) => {
     try {
       response = await fetch(`${process.env.WEBHOOK_URL}/${endpoint}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          // Autentica el salto Express→n8n: los workflows verifican este header
+          // para rechazar llamadas directas a n8n con empresa_id arbitrario
+          ...(process.env.WEBHOOK_SECRET && { 'x-kontia-secret': process.env.WEBHOOK_SECRET }),
+        },
         body: JSON.stringify(body),
         signal: controller.signal,
       });

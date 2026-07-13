@@ -1,0 +1,381 @@
+﻿{
+  "name": "Exportar CSV Facturas v2 MULTI-USUARIO",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "exportar-csv",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "843e0c4d-e266-4b0d-b22f-d41a82e5c903",
+      "name": "1. Webhook Exportar",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -832,
+        256
+      ],
+      "webhookId": "exportar-csv",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "url": "=https://manuel-nocodb.sgaz6n.easypanel.host/api/v2/tables/mztxvchnw7jq49d/records?limit=1000&where={{ $json.body.filtro_where || '(estado,neq,error)' }}&sort={{ $json.body.sort || '-fecha_factura' }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "nocoDbApiToken",
+        "options": {}
+      },
+      "id": "e9510386-b6fa-4a85-819e-b199ecc84515",
+      "name": "2. Leer Facturas NocoDB",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -576,
+        256
+      ],
+      "credentials": {
+        "nocoDbApiToken": {
+          "id": "OTAkGnziZnDsSSZB",
+          "name": "NocoDB Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Recibir config del portal\nconst body = $('1. Webhook Exportar').first().json.body || {};\nconst facturas = $('2. Leer Facturas NocoDB').first().json.list || [];\n\n// Columnas disponibles con sus labels para el CSV\nconst TODAS_COLUMNAS = {\n  'numero_factura': 'Num. Factura',\n  'fecha_factura': 'Fecha Factura',\n  'tipo_documento': 'Tipo',\n  'nif_emisor': 'NIF Emisor',\n  'nombre_emisor': 'Nombre Emisor',\n  'base_imponible': 'Base Imponible',\n  'total_factura': 'Total Factura',\n  'base_iva_21': 'Base IVA 21%',\n  'cuota_iva_21': 'Cuota IVA 21%',\n  'base_iva_10': 'Base IVA 10%',\n  'cuota_iva_10': 'Cuota IVA 10%',\n  'base_iva_4': 'Base IVA 4%',\n  'cuota_iva_4': 'Cuota IVA 4%',\n  'base_iva_0': 'Base IVA 0%',\n  'cuota_iva_0': 'Cuota IVA 0%',\n  'tipo_iva': 'Tipo IVA Principal',\n  'cuota_iva': 'Cuota IVA Total',\n  'tipo_retencion': '% Retención',\n  'cuota_retencion': 'Cuota Retención',\n  'cuenta_gasto': 'Cuenta Gasto',\n  'cuenta_tercero': 'Cuenta Tercero',\n  'estado': 'Estado',\n  'confianza_ia': 'Confianza IA',\n  'fecha_contabilizacion': 'Fecha Contabilización',\n  'numero_asiento': 'Nº Asiento',\n  'empresa_id': 'Empresa ID',\n  'archivo_url': 'URL Archivo'\n};\n\n// Columnas solicitadas (por defecto las más comunes)\nconst columnasDefault = [\n  'numero_factura','fecha_factura','tipo_documento','nif_emisor','nombre_emisor',\n  'base_imponible','base_iva_21','cuota_iva_21','base_iva_10','cuota_iva_10',\n  'base_iva_4','cuota_iva_4','base_iva_0','cuota_iva_0',\n  'tipo_retencion','cuota_retencion','total_factura','cuenta_gasto','cuenta_tercero'\n];\n\nconst columnas = body.columnas || columnasDefault;\nconst separador = body.separador || ';';\nconst incluirCabecera = body.incluir_cabecera !== false;\n\n// Generar CSV\nconst lineas = [];\n\n// Cabecera\nif (incluirCabecera) {\n  const cabecera = columnas.map(c => TODAS_COLUMNAS[c] || c);\n  lineas.push(cabecera.join(separador));\n}\n\n// Datos\nfor (const f of facturas) {\n  const fila = columnas.map(col => {\n    let val = f[col];\n    if (val === null || val === undefined) val = '';\n    // Escapar comillas y separadores en strings\n    val = String(val);\n    if (val.includes(separador) || val.includes('\"') || val.includes('\\n')) {\n      val = '\"' + val.replace(/\"/g, '\"\"') + '\"';\n    }\n    return val;\n  });\n  lineas.push(fila.join(separador));\n}\n\nconst csv = lineas.join('\\n');\n\n// Formato de respuesta según lo pedido\nconst formato = body.formato || 'download';\n\nif (formato === 'base64') {\n  return [{\n    json: {\n      success: true,\n      total_facturas: facturas.length,\n      columnas_incluidas: columnas,\n      csv_base64: Buffer.from(csv, 'utf-8').toString('base64'),\n      filename: 'facturas_' + new Date().toISOString().split('T')[0] + '.csv'\n    }\n  }];\n} else {\n  // download - devolver CSV directamente\n  return [{\n    json: {\n      success: true,\n      total_facturas: facturas.length,\n      columnas_incluidas: columnas,\n      csv_content: csv,\n      filename: 'facturas_' + new Date().toISOString().split('T')[0] + '.csv'\n    }\n  }];\n}"
+      },
+      "id": "a27089c4-2c57-4e4a-86b9-29d15d5e16df",
+      "name": "3. Generar CSV",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -320,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "format-check",
+              "leftValue": "={{ $('1. Webhook Exportar').first().json.body.formato }}",
+              "rightValue": "base64",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b6956002-79d6-4de6-8267-76032d09ad05",
+      "name": "4. Formato?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -80,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"total_facturas\": {{ $('3. Generar CSV').first().json.total_facturas }},\n  \"filename\": \"{{ $('3. Generar CSV').first().json.filename }}\",\n  \"csv_base64\": \"{{ $('3. Generar CSV').first().json.csv_base64 }}\"\n}",
+        "options": {}
+      },
+      "id": "57fcbace-3683-4ee2-9e6a-a7dd4edf3f2f",
+      "name": "5a. Responder Base64",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        176,
+        144
+      ],
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $('3. Generar CSV').first().json.csv_content }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/csv; charset=utf-8"
+              },
+              {
+                "name": "Content-Disposition",
+                "value": "=attachment; filename=\"{{ $('3. Generar CSV').first().json.filename }}\""
+              }
+            ]
+          }
+        }
+      },
+      "id": "2ae35343-5747-4edf-8c17-1d8078f16edc",
+      "name": "5b. Responder Descarga CSV",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        176,
+        352
+      ],
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "exportar-csv",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "3d0733f0-0e12-4a2f-adbd-b201961a5d1d",
+      "name": "1. Webhook Exportar1",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1360,
+        816
+      ],
+      "webhookId": "exportar-csv"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT *, id AS \"Id\" FROM facturas WHERE empresa_id = {{ parseInt($json.body.empresa_id) || 0 }} AND estado != 'error' AND eliminada = false ORDER BY fecha_factura DESC LIMIT 1000",
+        "options": {}
+      },
+      "id": "60cc2497-479d-4d12-a954-2ec072b304bc",
+      "name": "2. Leer Facturas PostgreSQL",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        -1104,
+        816
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "CREATE_ME",
+          "name": "Kontia PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Recibir config del portal\nconst body = $('1. Webhook Exportar1').first().json.body || {};\nconst facturas = $('2. Leer Facturas PostgreSQL').all().map(i => i.json);\n\n// Columnas disponibles con sus labels para el CSV\nconst TODAS_COLUMNAS = {\n  'numero_factura': 'Num. Factura',\n  'fecha_factura': 'Fecha Factura',\n  'tipo_documento': 'Tipo',\n  'nif_emisor': 'NIF Emisor',\n  'nombre_emisor': 'Nombre Emisor',\n  'base_imponible': 'Base Imponible',\n  'total_factura': 'Total Factura',\n  'base_iva_21': 'Base IVA 21%',\n  'cuota_iva_21': 'Cuota IVA 21%',\n  'base_iva_10': 'Base IVA 10%',\n  'cuota_iva_10': 'Cuota IVA 10%',\n  'base_iva_4': 'Base IVA 4%',\n  'cuota_iva_4': 'Cuota IVA 4%',\n  'base_iva_0': 'Base IVA 0%',\n  'cuota_iva_0': 'Cuota IVA 0%',\n  'tipo_iva': 'Tipo IVA Principal',\n  'cuota_iva': 'Cuota IVA Total',\n  'tipo_retencion': '% Retención',\n  'cuota_retencion': 'Cuota Retención',\n  'cuenta_gasto': 'Cuenta Gasto',\n  'cuenta_tercero': 'Cuenta Tercero',\n  'estado': 'Estado',\n  'confianza_ia': 'Confianza IA',\n  'fecha_contabilizacion': 'Fecha Contabilización',\n  'numero_asiento': 'Nº Asiento',\n  'empresa_id': 'Empresa ID',\n  'archivo_url': 'URL Archivo'\n};\n\n// Columnas solicitadas (por defecto las más comunes)\nconst columnasDefault = [\n  'numero_factura','fecha_factura','tipo_documento','nif_emisor','nombre_emisor',\n  'base_imponible','base_iva_21','cuota_iva_21','base_iva_10','cuota_iva_10',\n  'base_iva_4','cuota_iva_4','base_iva_0','cuota_iva_0',\n  'tipo_retencion','cuota_retencion','total_factura','cuenta_gasto','cuenta_tercero'\n];\n\nconst columnas = body.columnas || columnasDefault;\nconst separador = body.separador || ';';\nconst incluirCabecera = body.incluir_cabecera !== false;\n\n// Generar CSV\nconst lineas = [];\n\n// Cabecera\nif (incluirCabecera) {\n  const cabecera = columnas.map(c => TODAS_COLUMNAS[c] || c);\n  lineas.push(cabecera.join(separador));\n}\n\n// Datos\nfor (const f of facturas) {\n  const fila = columnas.map(col => {\n    let val = f[col];\n    if (val === null || val === undefined) val = '';\n    // Escapar comillas y separadores en strings\n    val = String(val);\n    if (val.includes(separador) || val.includes('\"') || val.includes('\\n')) {\n      val = '\"' + val.replace(/\"/g, '\"\"') + '\"';\n    }\n    return val;\n  });\n  lineas.push(fila.join(separador));\n}\n\nconst csv = lineas.join('\\n');\n\n// Formato de respuesta según lo pedido\nconst formato = body.formato || 'download';\n\nif (formato === 'base64') {\n  return [{\n    json: {\n      success: true,\n      total_facturas: facturas.length,\n      columnas_incluidas: columnas,\n      csv_base64: Buffer.from(csv, 'utf-8').toString('base64'),\n      filename: 'facturas_' + new Date().toISOString().split('T')[0] + '.csv'\n    }\n  }];\n} else {\n  // download - devolver CSV directamente\n  return [{\n    json: {\n      success: true,\n      total_facturas: facturas.length,\n      columnas_incluidas: columnas,\n      csv_content: csv,\n      filename: 'facturas_' + new Date().toISOString().split('T')[0] + '.csv'\n    }\n  }];\n}"
+      },
+      "id": "990314ad-0d2a-454f-a5aa-07b0a19a6335",
+      "name": "3. Generar CSV1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -848,
+        816
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "format-check",
+              "leftValue": "={{ $('1. Webhook Exportar1').first().json.body.formato }}",
+              "rightValue": "base64",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "d9e5d710-bf35-4f98-843f-5f27933c5c93",
+      "name": "4. Formato?1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -608,
+        816
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"total_facturas\": {{ $('3. Generar CSV1').first().json.total_facturas }},\n  \"filename\": \"{{ $('3. Generar CSV1').first().json.filename }}\",\n  \"csv_base64\": \"{{ $('3. Generar CSV1').first().json.csv_base64 }}\"\n}",
+        "options": {}
+      },
+      "id": "6ecea58f-f5a9-4c11-beac-09b827bd7ce8",
+      "name": "5a. Responder Base",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -352,
+        704
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $('3. Generar CSV1').first().json.csv_content }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/csv; charset=utf-8"
+              },
+              {
+                "name": "Content-Disposition",
+                "value": "=attachment; filename=\"{{ $('3. Generar CSV1').first().json.filename }}\""
+              }
+            ]
+          }
+        }
+      },
+      "id": "4647dcbe-52fe-48d7-982b-9af7d7ce6657",
+      "name": "5b. Responder Descarga CSV1",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -352,
+        912
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "1. Webhook Exportar": {
+      "main": [
+        [
+          {
+            "node": "2. Leer Facturas NocoDB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2. Leer Facturas NocoDB": {
+      "main": [
+        [
+          {
+            "node": "3. Generar CSV",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3. Generar CSV": {
+      "main": [
+        [
+          {
+            "node": "4. Formato?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4. Formato?": {
+      "main": [
+        [
+          {
+            "node": "5a. Responder Base64",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "5b. Responder Descarga CSV",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "1. Webhook Exportar1": {
+      "main": [
+        [
+          {
+            "node": "2. Leer Facturas PostgreSQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2. Leer Facturas PostgreSQL": {
+      "main": [
+        [
+          {
+            "node": "3. Generar CSV1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3. Generar CSV1": {
+      "main": [
+        [
+          {
+            "node": "4. Formato?1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4. Formato?1": {
+      "main": [
+        [
+          {
+            "node": "5a. Responder Base",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "5b. Responder Descarga CSV1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "699656c2-181b-46c1-ac14-41278aae6932",
+  "meta": {
+    "instanceId": "f327dfd493c80fca4f650a08e96d3ff3a416159f8af51aeabdfa008b14e550c4"
+  },
+  "nodeGroups": [],
+  "id": "l5lMOhciUlbxdqe4",
+  "tags": []
+}

@@ -77,6 +77,17 @@ pool.query('SELECT 1').then(() => {
     console.log(`Kontia server running on port ${PORT}`);
   });
 
+  // Facturas zombis: si n8n muere a mitad de proceso (timeout IA, MinIO caído),
+  // la fila queda en 'procesando' para siempre. Barrido cada 10 min.
+  setInterval(() => {
+    pool.query(
+      `UPDATE facturas SET estado = 'error'
+       WHERE estado = 'procesando' AND created_at < NOW() - INTERVAL '20 minutes'`
+    ).then((r) => {
+      if (r.rowCount > 0) console.log(`Sweeper: ${r.rowCount} facturas zombis marcadas como error`);
+    }).catch((err) => console.error('Sweeper error:', err.message));
+  }, 10 * 60 * 1000).unref();
+
   // Easypanel/Docker envía SIGTERM en cada redeploy: drenar conexiones antes de salir
   const shutdown = (signal) => {
     console.log(`${signal} received, shutting down gracefully`);

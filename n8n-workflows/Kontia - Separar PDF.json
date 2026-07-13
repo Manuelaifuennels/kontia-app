@@ -1,0 +1,118 @@
+{
+  "name": "Kontia - Separar PDF",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "separar-pdf",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "da7d475f-6416-4616-856d-45c28d8d64ad",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -64,
+        48
+      ],
+      "webhookId": "separar-pdf"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Recibir PDF en base64 y separar páginas usando pdftk\nconst body = $('Webhook').first().json.body;\nconst pdfBase64 = body.archivo_base64;\nconst fileName = body.archivo_nombre || 'documento.pdf';\nconst tipoDoc = body.tipo_documento || 'compra';\nconst empresaId = body.empresa_id || 0;\nconst fechaContable = body.fecha_contable || '';\n\n// Guardar PDF temporal\nconst fs = require('fs');\nconst path = require('path');\nconst { execSync } = require('child_process');\n\nconst tmpDir = '/tmp/kontia_split_' + Date.now();\nfs.mkdirSync(tmpDir, { recursive: true });\n\nconst inputPath = path.join(tmpDir, 'input.pdf');\nfs.writeFileSync(inputPath, Buffer.from(pdfBase64, 'base64'));\n\n// Separar con pdftk o qpdf\nlet pages = [];\ntry {\n  // Intentar con qpdf (más común en Docker)\n  const pageCount = execSync(`qpdf --show-npages ${inputPath}`).toString().trim();\n  const numPages = parseInt(pageCount);\n  \n  for (let i = 1; i <= numPages; i++) {\n    const outPath = path.join(tmpDir, `page_${i}.pdf`);\n    execSync(`qpdf ${inputPath} --pages . ${i} -- ${outPath}`);\n    const pageBase64 = fs.readFileSync(outPath).toString('base64');\n    pages.push({\n      archivo_base64: pageBase64,\n      archivo_nombre: fileName.replace('.pdf', `_pag${i}.pdf`),\n      media_type: 'application/pdf',\n      tipo_documento: tipoDoc,\n      empresa_id: empresaId,\n      fecha_contable: fechaContable,\n      pagina: i,\n      total_paginas: numPages\n    });\n  }\n} catch(e) {\n  // Si no hay qpdf, devolver el PDF completo sin separar\n  pages.push({\n    archivo_base64: pdfBase64,\n    archivo_nombre: fileName,\n    media_type: 'application/pdf',\n    tipo_documento: tipoDoc,\n    empresa_id: empresaId,\n    fecha_contable: fechaContable,\n    pagina: 1,\n    total_paginas: 1,\n    error: 'qpdf no disponible: ' + e.message\n  });\n}\n\n// Limpiar tmp\ntry { execSync(`rm -rf ${tmpDir}`); } catch(e) {}\n\nreturn pages.map(p => ({ json: p }));"
+      },
+      "id": "44707480-802b-4945-bb78-f2a2f2091a94",
+      "name": "Separar Páginas",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        176,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://manuel-n8n.sgaz6n.easypanel.host/webhook/procesar-factura",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "e1b5c8f6-5bc9-46f9-b1ff-b04f4f5f4300",
+      "name": "Procesar Cada Página",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        416,
+        48
+      ],
+      "executeOnce": false
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"paginas_procesadas\": {{ $items().length }},\n  \"mensaje\": \"PDF separado y cada página enviada a procesar\"\n}",
+        "options": {}
+      },
+      "id": "822f7488-4b37-4250-8bed-22ed21c40d16",
+      "name": "Responder",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        656,
+        48
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Separar Páginas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Separar Páginas": {
+      "main": [
+        [
+          {
+            "node": "Procesar Cada Página",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Procesar Cada Página": {
+      "main": [
+        [
+          {
+            "node": "Responder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "91b5b002-b89e-47ff-88a7-e91b7f97740f",
+  "meta": {
+    "instanceId": "f327dfd493c80fca4f650a08e96d3ff3a416159f8af51aeabdfa008b14e550c4"
+  },
+  "nodeGroups": [],
+  "id": "cHAtcYTFiYA2hVT4",
+  "tags": []
+}
