@@ -74,10 +74,12 @@ export default function ResumenFiscal() {
   const quarters = useMemo(() => {
     const qs = [0, 1, 2, 3].map((i) => ({
       name: Q_LABELS[i],
-      base: 0,
+      baseVentas: 0,
+      baseCompras: 0,
       ivaRepercutido: 0,
       ivaSoportado: 0,
-      retencion: 0,
+      retencionPracticada: 0,
+      retencionSoportada: 0,
     }));
 
     for (const f of active) {
@@ -85,25 +87,28 @@ export default function ResumenFiscal() {
       const q = getQuarter(f.fecha_factura);
       if (q === null) continue;
 
-      const baseDesglose = sumFields(f, BASE_KEYS);
-      const ivaDesglose = sumFields(f, CUOTA_KEYS);
-      const base = baseDesglose || (Number(f.base_imponible) || 0);
-      const iva = ivaDesglose || (Number(f.cuota_iva) || 0);
+      const tieneDesglose = BASE_KEYS.some((k) => Number(f[k]) > 0);
+      const base = tieneDesglose ? sumFields(f, BASE_KEYS) : (Number(f.base_imponible) || 0);
+      const iva = tieneDesglose ? sumFields(f, CUOTA_KEYS) : (Number(f.cuota_iva) || 0);
+      const retencion = Number(f.cuota_retencion) || 0;
 
-      qs[q].base += base;
       if (esVenta(f)) {
+        qs[q].baseVentas += base;
         qs[q].ivaRepercutido += iva;
+        // retención que el cliente nos practica: deducible en nuestro IRPF/IS
+        qs[q].retencionSoportada += retencion;
       } else {
+        qs[q].baseCompras += base;
         qs[q].ivaSoportado += iva;
+        // retención practicada a profesionales: a ingresar vía modelo 111
+        qs[q].retencionPracticada += retencion;
       }
-      qs[q].retencion += Number(f.cuota_retencion) || 0;
     }
 
     for (const q of qs) {
-      q.base = Math.round(q.base * 100) / 100;
-      q.ivaRepercutido = Math.round(q.ivaRepercutido * 100) / 100;
-      q.ivaSoportado = Math.round(q.ivaSoportado * 100) / 100;
-      q.retencion = Math.round(q.retencion * 100) / 100;
+      for (const k of ["baseVentas", "baseCompras", "ivaRepercutido", "ivaSoportado", "retencionPracticada", "retencionSoportada"]) {
+        q[k] = Math.round(q[k] * 100) / 100;
+      }
       q.ivaNeto = Math.round((q.ivaRepercutido - q.ivaSoportado) * 100) / 100;
     }
     return qs;
@@ -138,7 +143,7 @@ export default function ResumenFiscal() {
             <Tooltip formatter={(v) => `${fmt(v)} €`} />
             <Bar dataKey="ivaRepercutido" fill="#3b82f6" name="IVA repercutido" radius={[4, 4, 0, 0]} />
             <Bar dataKey="ivaSoportado" fill="#0d9488" name="IVA soportado" radius={[4, 4, 0, 0]} />
-            <Bar dataKey="retencion" fill="#f59e0b" name="Retención IRPF" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="retencionPracticada" fill="#f59e0b" name="IRPF practicado (mod. 111)" radius={[4, 4, 0, 0]} />
             <Legend />
           </BarChart>
         </ResponsiveContainer>
@@ -150,10 +155,12 @@ export default function ResumenFiscal() {
           <div key={i} className="bg-white border border-slate-200 rounded-xl p-4">
             <p className="text-base font-bold text-slate-700 mb-2">{q.name} {anio}</p>
             <div className="space-y-1 text-xs">
-              <div className="text-slate-500">Base: <b className="text-slate-700">{fmt(q.base)} €</b></div>
+              <div className="text-slate-500">Base ventas: <b className="text-slate-700">{fmt(q.baseVentas)} €</b></div>
+              <div className="text-slate-500">Base compras: <b className="text-slate-700">{fmt(q.baseCompras)} €</b></div>
               <div className="text-slate-500">IVA repercutido: <b className="text-blue-600">{fmt(q.ivaRepercutido)} €</b></div>
               <div className="text-slate-500">IVA soportado: <b className="text-teal-600">{fmt(q.ivaSoportado)} €</b></div>
-              <div className="text-slate-500">Retención IRPF: <b className="text-amber-600">{fmt(q.retencion)} €</b></div>
+              <div className="text-slate-500">IRPF practicado: <b className="text-amber-600">{fmt(q.retencionPracticada)} €</b></div>
+              <div className="text-slate-500">IRPF soportado: <b className="text-amber-600">{fmt(q.retencionSoportada)} €</b></div>
               <div className="pt-1 border-t border-slate-100 text-slate-500">
                 IVA a liquidar: <b className={q.ivaNeto >= 0 ? "text-slate-800" : "text-green-600"}>{fmt(q.ivaNeto)} €</b>
               </div>

@@ -4,7 +4,6 @@ import { useAuth } from "../hooks/useAuth";
 import { useToast } from "../components/ui/Toast";
 import { CONNECTORS, WEBHOOK_MAP } from "../constants/connectors";
 import Button from "../components/ui/Button";
-import Icon from "../components/ui/Icon";
 import Modal from "../components/ui/Modal";
 
 export default function Conectores() {
@@ -16,7 +15,8 @@ export default function Conectores() {
 
   async function handleExport() {
     if (!selected) return;
-    const endpoint = WEBHOOK_MAP[selected.id];
+    const conector = selected;
+    const endpoint = WEBHOOK_MAP[conector.id];
     if (!endpoint) {
       toast("Conector no configurado", "warning");
       return;
@@ -31,11 +31,20 @@ export default function Conectores() {
         empresa_id: user.empresa_id,
         ejercicio: new Date().getFullYear().toString(),
       });
-      setResult(res);
-      toast(res.downloaded ? `Descargado ${res.filename}` : "Exportación completada", "success");
+      // descartar respuestas obsoletas si el usuario cambió de conector a mitad
+      setSelected((s) => {
+        if (s?.id !== conector.id) return s;
+        setResult(res);
+        toast(res.downloaded ? `Descargado ${res.filename}` : "Exportación completada", "success");
+        return s;
+      });
     } catch (err) {
-      setResult({ error: err.message });
-      toast("Error exportando", "error");
+      setSelected((s) => {
+        if (s?.id !== conector.id) return s;
+        setResult({ error: err.message });
+        toast("Error exportando", "error");
+        return s;
+      });
     } finally {
       setExporting(false);
     }
@@ -106,7 +115,7 @@ export default function Conectores() {
             ) : (
               <div>
                 <p className="text-sm text-slate-500 mb-4">
-                  Se exportarán todas las facturas contabilizadas de tu empresa en formato {selected.name}.
+                  Se exportarán las facturas contabilizadas del ejercicio {new Date().getFullYear()} en formato {selected.name}.
                 </p>
                 <Button onClick={handleExport} disabled={exporting}>
                   {exporting ? "Exportando..." : "Exportar ahora"}

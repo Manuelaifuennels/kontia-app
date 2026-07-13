@@ -5,7 +5,6 @@ import { useToast } from "../components/ui/Toast";
 import { can } from "../constants/permissions";
 import { fmt, fmtDate } from "../utils/format";
 import Button from "../components/ui/Button";
-import Icon from "../components/ui/Icon";
 
 const ESTADO_ENVIO_COLORS = {
   pendiente: "bg-amber-100 text-amber-700",
@@ -47,13 +46,19 @@ export default function FacturaElectronica() {
 
   useEffect(() => { load(); }, [load]);
 
+  const [toggling, setToggling] = useState(false);
+
   async function toggleActivo() {
+    if (toggling) return;
+    setToggling(true);
     try {
       const r = await api.patch("/verifactu/config", { activo: !estado?.activo });
       setEstado((p) => ({ ...p, activo: r.activo }));
       toast(r.activo ? "VeriFactu activado" : "VeriFactu desactivado", "success");
     } catch (err) {
       toast(err.message, "error");
+    } finally {
+      setToggling(false);
     }
   }
 
@@ -70,8 +75,11 @@ export default function FacturaElectronica() {
     }
   }
 
+  const [genProgreso, setGenProgreso] = useState(0);
+
   async function generarTodas() {
     setGenerando("all");
+    setGenProgreso(0);
     let ok = 0, fail = 0;
     for (const f of pendientes) {
       try {
@@ -80,6 +88,7 @@ export default function FacturaElectronica() {
       } catch {
         fail++;
       }
+      setGenProgreso(ok + fail);
     }
     toast(`${ok} registros generados${fail ? `, ${fail} con error` : ""}`, fail === 0 ? "success" : "warning");
     setGenerando(null);
@@ -100,8 +109,8 @@ export default function FacturaElectronica() {
           </p>
         </div>
         {esAdmin && (
-          <Button variant={estado?.activo ? "secondary" : "primary"} onClick={toggleActivo}>
-            {estado?.activo ? "Desactivar" : "Activar VeriFactu"}
+          <Button variant={estado?.activo ? "secondary" : "primary"} onClick={toggleActivo} disabled={toggling}>
+            {toggling ? "..." : estado?.activo ? "Desactivar" : "Activar VeriFactu"}
           </Button>
         )}
       </div>
@@ -135,7 +144,7 @@ export default function FacturaElectronica() {
             </h2>
             {puedeGenerar && (
               <Button size="sm" onClick={generarTodas} disabled={generando !== null}>
-                {generando === "all" ? "Generando..." : `Generar todas (${pendientes.length})`}
+                {generando === "all" ? `Generando ${genProgreso}/${pendientes.length}...` : `Generar todas (${pendientes.length})`}
               </Button>
             )}
           </div>

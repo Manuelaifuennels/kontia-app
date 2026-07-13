@@ -31,12 +31,22 @@ export default function SubirDocs({ onBack }) {
   const [progress, setProgress] = useState([]);
 
   function addFiles(fileList) {
-    setFiles([...fileList]);
+    const permitidos = [...fileList].filter((f) =>
+      ACCEPTED.split(",").some((ext) => f.name.toLowerCase().endsWith(ext))
+    );
+    if (permitidos.length < fileList.length) {
+      toast(`${fileList.length - permitidos.length} archivo(s) ignorado(s): tipo no permitido`, "warning");
+    }
+    setFiles(permitidos);
   }
 
   async function handleUpload() {
     if (files.length === 0) return;
+    if (fechaMode === "configurable" && !fechaCustom) {
+      return toast("Indica la fecha contable personalizada", "warning");
+    }
     setUploading(true);
+    setProgress([]);
     const results = [];
 
     for (let i = 0; i < files.length; i++) {
@@ -50,6 +60,7 @@ export default function SubirDocs({ onBack }) {
         await api.webhook(endpoint, {
           archivo_base64: b64,
           nombre_archivo: file.name,
+          archivo_nombre: file.name,
           media_type: file.type,
           empresa_id: user.empresa_id,
           tipo_documento: tipo,
@@ -59,6 +70,7 @@ export default function SubirDocs({ onBack }) {
           empresa_carpeta: String(user.empresa_id),
         });
         results.push({ file: file.name, ok: true });
+        setProgress((p) => [...p, `✓ ${file.name} enviado`]);
       } catch (e) {
         results.push({ file: file.name, ok: false, err: e.message });
         setProgress((p) => [...p, `❌ ${file.name}: ${e.message}`]);

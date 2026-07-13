@@ -65,6 +65,14 @@ const api = {
       },
       body: JSON.stringify(body),
     });
+    if (res.status === 401) {
+      const hadToken = localStorage.getItem(TOKEN_KEY);
+      localStorage.removeItem("kontia_user");
+      localStorage.removeItem("kontia_token");
+      localStorage.removeItem("kontia_empresas");
+      if (hadToken) window.location.reload();
+      throw new Error("Sesión expirada");
+    }
     if (!res.ok) {
       const errBody = await res.json().catch(() => ({}));
       throw new Error(errBody.message || errBody.error || `Error ${res.status}`);
@@ -74,8 +82,8 @@ const api = {
       return res.json();
     }
     const cd = res.headers.get("content-disposition") || "";
-    const match = cd.match(/filename="?([^";]+)"?/i);
-    const filename = match ? match[1] : `${endpoint}.csv`;
+    const match = cd.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
+    const filename = match ? decodeURIComponent(match[1]) : `${endpoint}.csv`;
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -84,7 +92,7 @@ const api = {
     document.body.appendChild(a);
     a.click();
     a.remove();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
     return { downloaded: true, filename };
   },
 

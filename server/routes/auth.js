@@ -425,31 +425,51 @@ router.patch('/users/:id/rol', authMiddleware, async (req, res) => {
       return res.status(400).json({ message: 'Rol no válido' });
     }
 
-    const member = await pool.query(
-      'SELECT id FROM usuarios_empresas WHERE usuario_id = $1 AND empresa_id = $2',
-      [targetId, req.user.empresa_id]
-    );
-    if (member.rows.length === 0) {
-      return res.status(404).json({ message: 'Usuario no encontrado en esta empresa' });
-    }
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      // Serializa los cambios de rol por empresa: evita que dos admins se degraden
+      // mutuamente a la vez y dejen la empresa sin ningún administrador (namespace 5)
+      await client.query('SELECT pg_advisory_xact_lock($1, $2)', [5, req.user.empresa_id]);
 
-    if (targetId === req.user.id && rol !== 'admin') {
-      const otherAdmins = await pool.query(
-        `SELECT count(*)::int AS n FROM usuarios_empresas
-         WHERE empresa_id = $1 AND rol = 'admin' AND usuario_id != $2`,
-        [req.user.empresa_id, req.user.id]
+      const member = await client.query(
+        'SELECT rol FROM usuarios_empresas WHERE usuario_id = $1 AND empresa_id = $2',
+        [targetId, req.user.empresa_id]
       );
-      if (otherAdmins.rows[0].n === 0) {
-        return res.status(400).json({ message: 'No puedes quitarte el rol de admin: eres el único administrador' });
+      if (member.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ message: 'Usuario no encontrado en esta empresa' });
       }
-    }
 
-    await pool.query(
-      'UPDATE usuarios_empresas SET rol = $1 WHERE usuario_id = $2 AND empresa_id = $3',
-      [rol, targetId, req.user.empresa_id]
-    );
-    invalidateUserCache(targetId, req.user.empresa_id);
-    res.json({ success: true });
+      // Si se degrada a un admin actual (sea quien sea), debe quedar al menos
+      // otro admin ACTIVO en la empresa
+      if (member.rows[0].rol === 'admin' && rol !== 'admin') {
+        const otherAdmins = await client.query(
+          `SELECT count(*)::int AS n
+           FROM usuarios_empresas ue
+           JOIN usuarios u ON u.id = ue.usuario_id AND u.activo = true
+           WHERE ue.empresa_id = $1 AND ue.rol = 'admin' AND ue.usuario_id != $2`,
+          [req.user.empresa_id, targetId]
+        );
+        if (otherAdmins.rows[0].n === 0) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({ message: 'No se puede degradar: es el único administrador activo de la empresa' });
+        }
+      }
+
+      await client.query(
+        'UPDATE usuarios_empresas SET rol = $1 WHERE usuario_id = $2 AND empresa_id = $3',
+        [rol, targetId, req.user.empresa_id]
+      );
+      await client.query('COMMIT');
+      invalidateUserCache(targetId, req.user.empresa_id);
+      res.json({ success: true });
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   } catch (err) {
     res.status(500).json({ message: 'Error al actualizar rol' });
   }
@@ -476,7 +496,20 @@ router.patch('/users/:id/activo', authMiddleware, async (req, res) => {
       return res.status(404).json({ message: 'Usuario no encontrado en esta empresa' });
     }
 
-    // usuarios.activo es global: desactivar aquí bloquea el acceso del usuario a todas sus empresas
+    // usuarios.activo es GLOBAL: solo se permite desactivar a usuarios cuya única
+    // empresa sea esta — un admin de A no puede bloquear el acceso de un gestor a B
+    if (!activo) {
+      const memberships = await pool.query(
+        'SELECT count(*)::int AS n FROM usuarios_empresas WHERE usuario_id = $1',
+        [targetId]
+      );
+      if (memberships.rows[0].n > 1) {
+        return res.status(409).json({
+          message: 'Este usuario pertenece a varias empresas: no se puede desactivar globalmente desde aquí. Quítale el acceso cambiando su rol.',
+        });
+      }
+    }
+
     await pool.query('UPDATE usuarios SET activo = $1 WHERE id = $2', [activo, targetId]);
     invalidateUserCache(targetId);
     res.json({ success: true });

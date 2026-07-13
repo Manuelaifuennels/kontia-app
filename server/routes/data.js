@@ -273,6 +273,10 @@ router.post('/facturas/:id/contabilizar', async (req, res) => {
         await client.query('ROLLBACK');
         return res.status(422).json({ error: `Año ${anio} fuera de rango válido (2000–${currentYear + 1}). Revisa fecha_factura.` });
       }
+      // El lock se toma ANTES de buscar/crear el ejercicio: serializa tanto la
+      // numeración de asientos como la auto-creación del ejercicio del año
+      await client.query('SELECT pg_advisory_xact_lock($1, $2)', [1, req.user.empresa_id]);
+
       let ejercicioId;
       const ejR = await client.query(
         'SELECT id, estado, bloqueado FROM ejercicios WHERE empresa_id = $1 AND anio = $2 FOR SHARE',
@@ -292,7 +296,6 @@ router.post('/facturas/:id/contabilizar', async (req, res) => {
         ejercicioId = newEj.rows[0].id;
       }
 
-      await client.query('SELECT pg_advisory_xact_lock($1, $2)', [1, req.user.empresa_id]);
       const numR = await client.query(
         'SELECT COALESCE(MAX(numero), 0) + 1 AS n FROM asientos WHERE empresa_id = $1 AND ejercicio_id = $2',
         [req.user.empresa_id, ejercicioId]
@@ -590,6 +593,9 @@ router.post('/:table', async (req, res) => {
     const result = await pool.query(query, allValues);
     res.json(mapRow(result.rows[0]));
   } catch (err) {
+    if (err.code === '23505') {
+      return res.status(409).json({ error: 'Ya existe un registro con esos datos (duplicado)' });
+    }
     res.status(err.status || 500).json({ error: safeError(err) });
   }
 });
@@ -599,6 +605,9 @@ router.patch('/:table', async (req, res) => {
     const table = req.params.table;
     if (!ALLOWED_TABLES.has(table)) {
       return res.status(400).json({ error: `Tabla desconocida: ${table}` });
+    }
+    if (BLOCKED_CRUD.has(table)) {
+      return res.status(403).json({ error: 'Usa /api/auth para gestionar usuarios' });
     }
     if (READONLY_TABLES.has(table)) {
       return res.status(403).json({ error: 'Tabla de solo lectura' });
@@ -705,14 +714,23 @@ router.patch('/:table', async (req, res) => {
     }
 
     if (table === 'config' && body.cif_empresa) {
-      const cif = body.cif_empresa.trim().toUpperCase();
+      const cif = String(body.cif_empresa).trim().toUpperCase();
       if (!NIF_CIF_RE.test(cif)) {
         return res.status(400).json({ error: 'Formato de CIF/NIF inválido' });
       }
+      body.cif_empresa = cif;
     }
 
     if (table === 'ejercicios') {
       delete body.anio;
+      if ('bloqueado' in body) {
+        body.bloqueado = body.bloqueado === true || body.bloqueado === 'true';
+      }
+      // abrir/cerrar/bloquear un ejercicio altera el régimen de inmutabilidad fiscal:
+      // reservado a admin y contable, no a editores
+      if (('estado' in body || 'bloqueado' in body) && !CAN_CONTABILIZAR.has(liveWrite.rol)) {
+        return res.status(403).json({ error: 'Solo admin o contable pueden cambiar el estado de un ejercicio' });
+      }
     }
 
     if (table === 'ejercicios' && (body.estado === 'cerrado' || body.bloqueado === true)) {

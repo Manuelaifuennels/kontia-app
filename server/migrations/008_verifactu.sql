@@ -17,7 +17,9 @@ CREATE TABLE IF NOT EXISTS verifactu_registros (
   importe_total NUMERIC(12,2) NOT NULL DEFAULT 0,
   huella_anterior VARCHAR(64),
   huella VARCHAR(64) NOT NULL,
-  fecha_hora_gen TIMESTAMPTZ NOT NULL,
+  -- TEXT, no TIMESTAMPTZ: se persiste la cadena EXACTA (ISO 8601 con huso) que
+  -- entró en el cálculo de la huella, para que siempre sea re-verificable
+  fecha_hora_gen TEXT NOT NULL,
   qr_url TEXT,
   estado_envio VARCHAR(20) NOT NULL DEFAULT 'pendiente',
   created_at TIMESTAMPTZ DEFAULT NOW()

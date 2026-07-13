@@ -56,13 +56,21 @@ export function qrUrl({ nifEmisor, numSerie, fechaExpedicion, importeTotal }) {
   return `${QR_BASE}?${params.toString()}`;
 }
 
-// Fecha-hora con huso horario (ISO 8601 con offset, ej. 2026-07-03T12:34:56+02:00)
+// Fecha-hora con huso horario (ISO 8601 con offset, ej. 2026-07-03T12:34:56+02:00).
+// Anclada a Europe/Madrid con independencia del TZ del contenedor: la cadena
+// generada aquí es la que entra en la huella y la que se persiste tal cual —
+// si dependiera del TZ del host, las huellas dejarían de ser re-verificables.
 export function fechaHoraHuso(date = new Date()) {
-  const pad = (n) => String(n).padStart(2, '0');
-  const off = -date.getTimezoneOffset();
-  const sign = off >= 0 ? '+' : '-';
-  const abs = Math.abs(off);
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
-    `T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}` +
-    `${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
+  const fecha = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Europe/Madrid',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false,
+  }).format(date); // "2026-07-03 12:34:56"
+  const tzPart = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Europe/Madrid',
+    timeZoneName: 'longOffset',
+  }).formatToParts(date).find((p) => p.type === 'timeZoneName')?.value || 'GMT+00:00';
+  const offset = tzPart.replace('GMT', '') || '+00:00';
+  return `${fecha.replace(' ', 'T')}${offset}`;
 }

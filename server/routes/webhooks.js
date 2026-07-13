@@ -113,11 +113,12 @@ router.post('/:endpoint', async (req, res) => {
       if (buffer.byteLength > MAX_RESPONSE_SIZE) {
         return res.status(502).json({ error: 'Respuesta del webhook demasiado grande' });
       }
-      // conservar el filename que envía n8n, forzando siempre attachment
-      const cd = response.headers.get('content-disposition');
+      // conservar el filename que envía n8n (attachment o inline), forzando siempre attachment
+      const cd = response.headers.get('content-disposition') || '';
+      const fnMatch = cd.match(/filename\*?=(?:UTF-8'')?"?([^";\r\n]+)"?/i);
       res.status(response.status)
         .set('Content-Type', contentType)
-        .set('Content-Disposition', cd && /^attachment/i.test(cd) ? cd : 'attachment')
+        .set('Content-Disposition', fnMatch ? `attachment; filename="${fnMatch[1].replace(/"/g, '')}"` : 'attachment')
         .send(Buffer.from(buffer));
     } else {
       res.status(502).json({ error: 'Respuesta del webhook con tipo no permitido' });

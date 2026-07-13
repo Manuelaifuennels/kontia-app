@@ -14,6 +14,7 @@ export default function EjerciciosTab({ ejercicios, onReload }) {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [cerrarTarget, setCerrarTarget] = useState(null);
   const [form, setForm] = useState({ anio: "", fecha_inicio: "", fecha_fin: "" });
+  const [busy, setBusy] = useState(false);
 
   const rows = Array.isArray(ejercicios) ? ejercicios : ejercicios?.list || [];
 
@@ -51,16 +52,22 @@ export default function EjerciciosTab({ ejercicios, onReload }) {
   }
 
   async function handleReabrir(ej) {
+    if (busy) return;
+    setBusy(true);
     try {
-      await api.updateRecord("ejercicios", { Id: ej.Id, estado: "abierto", bloqueado: false });
+      await api.updateRecord("ejercicios", { Id: ej.Id, estado: "abierto", bloqueado: false, fecha_cierre: null });
       toast(`Ejercicio ${ej.anio} reabierto`, "success");
       onReload();
     } catch (err) {
       toast(err.message, "error");
+    } finally {
+      setBusy(false);
     }
   }
 
   async function handleBloqueo(ej) {
+    if (busy) return;
+    setBusy(true);
     const bloquear = !ej.bloqueado;
     try {
       await api.updateRecord("ejercicios", { Id: ej.Id, bloqueado: bloquear });
@@ -68,6 +75,8 @@ export default function EjerciciosTab({ ejercicios, onReload }) {
       onReload();
     } catch (err) {
       toast(err.message, "error");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -124,15 +133,15 @@ export default function EjerciciosTab({ ejercicios, onReload }) {
                 <td className="px-4 py-2.5">
                   <div className="flex gap-1 justify-end">
                     {ej.estado === "cerrado" ? (
-                      <Button variant="secondary" size="sm" onClick={() => handleReabrir(ej)} title="Reabrir ejercicio">
+                      <Button variant="secondary" size="sm" onClick={() => handleReabrir(ej)} disabled={busy} title="Reabrir ejercicio">
                         <Icon name="undo" size={13} /> Reabrir
                       </Button>
                     ) : (
                       <>
-                        <Button variant="secondary" size="sm" onClick={() => handleBloqueo(ej)} title={ej.bloqueado ? "Desbloquear" : "Bloquear temporalmente"}>
+                        <Button variant="secondary" size="sm" onClick={() => handleBloqueo(ej)} disabled={busy} title={ej.bloqueado ? "Desbloquear" : "Bloquear temporalmente"}>
                           {ej.bloqueado ? "Desbloquear" : "Bloquear"}
                         </Button>
-                        <Button variant="secondary" size="sm" onClick={() => setCerrarTarget(ej)} title="Cerrar ejercicio (valida el cuadre de todos los asientos)">
+                        <Button variant="secondary" size="sm" onClick={() => setCerrarTarget(ej)} disabled={busy} title="Cerrar ejercicio (valida el cuadre de todos los asientos)">
                           Cerrar
                         </Button>
                       </>

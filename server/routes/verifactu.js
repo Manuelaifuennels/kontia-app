@@ -139,6 +139,14 @@ router.post('/facturas/:id/alta', async (req, res) => {
     if (!TIPOS_EMITIDA.has(f.tipo_documento)) {
       return res.status(422).json({ error: 'VeriFactu solo aplica a facturas emitidas (venta/emitida/exportación)' });
     }
+    // Solo facturas contabilizadas: así la factura ya es inmutable (PATCH/DELETE
+    // devuelven 409) y el registro encadenado nunca diverge de sus datos
+    if (f.estado !== 'contabilizada') {
+      return res.status(422).json({ error: 'La factura debe estar contabilizada antes de generar su registro VeriFactu' });
+    }
+    if (f.eliminada === true) {
+      return res.status(422).json({ error: 'La factura está en la papelera' });
+    }
     if (!f.numero_factura || !f.fecha_factura) {
       return res.status(422).json({ error: 'La factura necesita número y fecha para generar el registro' });
     }

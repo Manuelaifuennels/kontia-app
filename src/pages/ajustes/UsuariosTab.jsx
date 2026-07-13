@@ -16,8 +16,8 @@ const ROLES_SHORT = [
 
 const ROLES_LONG = [
   { value: "admin", label: "Admin — Acceso total" },
-  { value: "editor", label: "Editor — Puede modificar facturas" },
-  { value: "contable", label: "Contable — Solo contabilizar" },
+  { value: "editor", label: "Editor — Sube y edita facturas (no elimina ni contabiliza)" },
+  { value: "contable", label: "Contable — Sube, edita, contabiliza y exporta" },
   { value: "usuario", label: "Usuario — Solo lectura" },
 ];
 
@@ -68,8 +68,11 @@ export default function UsuariosTab({ user }) {
     }
   }
 
+  const [savingRol, setSavingRol] = useState(false);
+
   async function saveRol() {
-    if (!editUser) return;
+    if (!editUser || savingRol) return;
+    setSavingRol(true);
     try {
       await api.patch(`/auth/users/${editUser.Id}/rol`, { rol: editRol });
       toast("Rol actualizado", "success");
@@ -77,6 +80,8 @@ export default function UsuariosTab({ user }) {
       load();
     } catch (err) {
       toast(err.message, "error");
+    } finally {
+      setSavingRol(false);
     }
   }
 
@@ -132,14 +137,20 @@ export default function UsuariosTab({ user }) {
                     </span>
                   </td>
                   <td className="px-4 py-2.5">
-                    <button
-                      onClick={() => toggleActivo(u)}
-                      className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium cursor-pointer transition-colors ${
-                        u.activo === "true" || u.activo === true ? "bg-green-100 text-green-700" : "bg-red-50 text-red-700"
-                      }`}
-                    >
-                      {u.activo === "true" || u.activo === true ? "Activo" : "Inactivo"}
-                    </button>
+                    {u.Id === user?.id ? (
+                      <span className="inline-block rounded-full px-2.5 py-0.5 text-xs font-medium bg-green-100 text-green-700" title="No puedes desactivar tu propia cuenta">
+                        Activo (tú)
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => toggleActivo(u)}
+                        className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium cursor-pointer transition-colors ${
+                          u.activo === "true" || u.activo === true ? "bg-green-100 text-green-700" : "bg-red-50 text-red-700"
+                        }`}
+                      >
+                        {u.activo === "true" || u.activo === true ? "Activo" : "Inactivo"}
+                      </button>
+                    )}
                   </td>
                   <td className="px-4 py-2.5 text-slate-500 text-xs">{u.ultimo_login ? fmtDate(u.ultimo_login) : "Nunca"}</td>
                   <td className="px-4 py-2.5">
@@ -182,14 +193,14 @@ export default function UsuariosTab({ user }) {
               options={ROLES_LONG}
             />
             <div className="bg-slate-50 rounded-lg p-3 mb-3 text-xs text-slate-500 space-y-1">
-              <div><b>Admin:</b> Acceso total incluyendo ajustes y usuarios.</div>
-              <div><b>Editor:</b> Puede subir, editar y eliminar facturas.</div>
-              <div><b>Contable:</b> Puede contabilizar y exportar.</div>
+              <div><b>Admin:</b> Acceso total: ajustes, usuarios, eliminar y contabilizar.</div>
+              <div><b>Editor:</b> Sube y edita facturas. No elimina ni contabiliza.</div>
+              <div><b>Contable:</b> Sube, edita, contabiliza y exporta. No elimina.</div>
               <div><b>Usuario:</b> Solo puede ver facturas.</div>
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="secondary" size="sm" onClick={() => setEditUser(null)}>Cancelar</Button>
-              <Button size="sm" onClick={saveRol}>Guardar rol</Button>
+              <Button size="sm" onClick={saveRol} disabled={savingRol}>{savingRol ? "Guardando..." : "Guardar rol"}</Button>
             </div>
           </div>
         )}

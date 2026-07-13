@@ -17,15 +17,18 @@ export default function Papelera({ facturas = [], onReload }) {
     setRestoring(true);
     let ok = 0;
     const errores = [];
+    const fallidas = {};
     for (const id of ids) {
       try {
         await api.updateRecord("facturas", { Id: id, eliminada: false });
         ok++;
       } catch (err) {
         errores.push(err.message);
+        fallidas[id] = true;
       }
     }
-    setSel({});
+    // conservar seleccionadas solo las que fallaron, para reintentarlas
+    setSel(fallidas);
     setRestoring(false);
     if (errores.length === 0) {
       toast(`${ok} facturas restauradas`, "success");
