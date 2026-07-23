@@ -120,13 +120,16 @@ function editableKeys(body, table, computedApplied = false) {
   return Object.keys(body).filter(k => validCol(k) && !SYSTEM_COLS.has(k));
 }
 
-function recalcFactura(data) {
+function recalcFactura(data, { skipDualModeCheck = false } = {}) {
   const hasMultiIva = IVA_BRACKETS.some(b => {
     const v = parseFloat(data[b.base]);
     return Number.isFinite(v) && v !== 0;
   });
 
-  if (hasMultiIva && Number.isFinite(parseFloat(data.base_imponible)) && parseFloat(data.base_imponible) > 0 && Number.isFinite(parseFloat(data.tipo_iva)) && parseFloat(data.tipo_iva) > 0) {
+  // El guard anti-ambigüedad aplica a INPUT DE CLIENTE. Las filas que vienen de la
+  // DB llevan legítimamente ambos modos (el pipeline n8n guarda agregado + tramos):
+  // ahí el desglose por tramos manda y el agregado se recalcula.
+  if (!skipDualModeCheck && hasMultiIva && Number.isFinite(parseFloat(data.base_imponible)) && parseFloat(data.base_imponible) > 0 && Number.isFinite(parseFloat(data.tipo_iva)) && parseFloat(data.tipo_iva) > 0) {
     throw Object.assign(new Error('No envíes base_imponible+tipo_iva junto a bases por tramo (base_iva_X). Usa un modo u otro.'), { status: 400 });
   }
 
@@ -235,7 +238,7 @@ router.post('/facturas/:id/contabilizar', async (req, res) => {
       return res.status(400).json({ error: 'Factura sin importe: base_imponible debe ser mayor que 0' });
     }
 
-    recalcFactura(row);
+    recalcFactura(row, { skipDualModeCheck: true });
 
     const isIntracomunitaria = row.tipo_documento === 'intracomunitaria';
     let isCompra;
@@ -775,8 +778,15 @@ router.patch('/:table', async (req, res) => {
     let computedApplied = false;
     if (table === 'facturas' && fcurrent) {
       for (const col of COMPUTED_COLS.facturas) delete body[col];
+      // El guard de modos mixtos se evalúa SOLO sobre lo que envía el cliente;
+      // la fila de DB lleva legítimamente agregado + tramos (pipeline n8n)
+      const bodyHasBrackets = IVA_BRACKETS.some(b => parseFloat(body[b.base]) > 0);
+      const bodyHasSingle = parseFloat(body.base_imponible) > 0 && parseFloat(body.tipo_iva) > 0;
+      if (bodyHasBrackets && bodyHasSingle) {
+        return res.status(400).json({ error: 'No envíes base_imponible+tipo_iva junto a bases por tramo (base_iva_X). Usa un modo u otro.' });
+      }
       const merged = { ...fcurrent, ...body };
-      recalcFactura(merged);
+      recalcFactura(merged, { skipDualModeCheck: true });
       for (const col of COMPUTED_COLS.facturas) {
         if (merged[col] !== undefined) body[col] = merged[col];
       }
