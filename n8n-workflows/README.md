@@ -13,17 +13,18 @@ PostgreSQL ("Kontia PostgreSQL") en los nodos que la piden.
 | Exportar CSV v2 | parseInt en empresa_id (cerraba fuga multi-tenant vía inyección). **REIMPORTAR** |
 | Exportar A3 / Contaplus / ContaSol / Conciliación | Filtraban por estado `completada` (inexistente) → `contabilizada`. **REIMPORTAR** |
 | Exportar Sage 50 / Sage Despachos / Aplifisa / Glasof / Goldennet / Diezsoftware | Nuevos: exportan desde asientos+apuntes reales. **IMPORTAR** |
-| Separar PDF | Sin cambios. |
+| Separar PDF | El nodo `Procesar Cada Página` llama internamente al webhook `procesar-factura`. Al activar Header Auth en ese webhook, esa llamada empezaba a devolver 403 y rompía la separación de PDFs. Ahora el nodo envía la credencial `webhook`. **Ya aplicado en n8n** (versión "Header Auth en llamada interna"). |
 | Kontia Auth v3 DESACTIVADO | **No incluido**: código muerto (NocoDB, password en claro, token falsificable). Borrarlo de n8n. |
 
 ## Seguridad pendiente en n8n (hacer en la UI, 2 min por workflow)
 
-1. **Autenticación de webhooks** — los webhooks aceptan llamadas directas con
-   cualquier `empresa_id`. El backend Express ya envía el header `x-kontia-secret`
-   (valor de la env `WEBHOOK_SECRET`). En cada nodo Webhook: Authentication →
-   Header Auth → crear credencial con Name `x-kontia-secret` y Value igual a
-   `WEBHOOK_SECRET`. Aplicar a: procesar-factura, separar-pdf, conciliacion-bancaria
-   y todos los exportar-*.
+1. ~~**Autenticación de webhooks**~~ **HECHO** (2026-07-24). Credencial Header Auth
+   `webhook` (id `QaJ2hAeH0Ylc43hB`) con Name `x-kontia-secret`, asignada a los
+   nodos Webhook. El backend Express envía esa cabecera con el valor de la env
+   `WEBHOOK_SECRET`.
+   **OJO al añadir workflows nuevos:** cualquier nodo HTTP Request que llame a un
+   webhook propio de Kontia debe usar también esa credencial (Authentication →
+   Generic Credential Type → Header Auth → `webhook`), o recibirá 403.
 2. **Error Workflow global** — crear un workflow con Error Trigger que haga
    `UPDATE facturas SET estado='error' WHERE id = ...` y asignarlo en Settings de
    cada workflow. (Mientras tanto, la app barre las facturas en 'procesando' > 20 min.)

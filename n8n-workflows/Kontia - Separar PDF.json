@@ -35,6 +35,8 @@
       "parameters": {
         "method": "POST",
         "url": "https://manuel-n8n.sgaz6n.easypanel.host/webhook/procesar-factura",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json) }}",
@@ -48,6 +50,12 @@
         416,
         48
       ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "QaJ2hAeH0Ylc43hB",
+          "name": "webhook"
+        }
+      },
       "executeOnce": false
     },
     {
