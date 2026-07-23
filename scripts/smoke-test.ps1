@@ -75,7 +75,11 @@ if (-not $token) {
     $r = (Invoke-Api GET "/api/data/usuarios" -Token $token).list
     ($null -ne $r) -and (-not ($r | Where-Object { $_.PSObject.Properties.Name -contains "password" }))
   }
-  Test-Endpoint "GET verifactu/estado responde" {
+  # Estas dos dependen de las migraciones 007 y 008: si fallan, no se aplicaron
+  Test-Endpoint "Migracion 007 (tabla conectores) aplicada" {
+    $null -ne (Invoke-Api GET "/api/data/conectores" -Token $token).list
+  }
+  Test-Endpoint "Migracion 008 (VeriFactu) aplicada" {
     $r = Invoke-Api GET "/api/verifactu/estado" -Token $token
     $null -ne $r.totalRegistros
   }
