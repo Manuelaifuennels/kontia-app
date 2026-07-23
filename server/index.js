@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 import pool from './db.js';
+import { runMigrations } from './migrate.js';
 import authRoutes from './routes/auth.js';
 import dataRoutes from './routes/data.js';
 import webhookRoutes from './routes/webhooks.js';
@@ -71,8 +72,14 @@ if (isProd) {
   });
 }
 
-pool.query('SELECT 1').then(() => {
+pool.query('SELECT 1').then(async () => {
   console.log('PostgreSQL connected');
+
+  // Migraciones automáticas: nunca tumban el arranque (ver server/migrate.js)
+  await runMigrations().catch((err) => {
+    console.error('Migraciones: fallo general —', err.message);
+  });
+
   const server = app.listen(PORT, () => {
     console.log(`Kontia server running on port ${PORT}`);
   });
